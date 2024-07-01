@@ -1,8 +1,8 @@
-﻿using System.Collections.Generic;
-using Cysharp.Text;
+﻿using Cysharp.Text;
 using TMPro;
 using UnityEngine;
 using YARG.Core.Chart;
+using YARG.Core.Logging;
 using YARG.Settings;
 
 namespace YARG.Gameplay.HUD
@@ -21,17 +21,14 @@ namespace YARG.Gameplay.HUD
         private GameObject _normalBackground;
         [SerializeField]
         private GameObject _transparentBackground;
-
         [SerializeField]
-        private TextMeshProUGUI _lyricText;
-
+        private LyricBarPhrase _lyricA;
         [SerializeField]
-        private TextMeshProUGUI _nextLyricText;
+        private LyricBarPhrase _lyricB;
+        // Phrases will alternate between these two objects
 
         private LyricsTrack _lyrics;
         private int _currentPhraseIndex = 0;
-        private int _currentLyricIndex = 0;
-
         private double _upcomingLyricsThreshold;
 
         protected override void GameplayAwake()
@@ -60,11 +57,7 @@ namespace YARG.Gameplay.HUD
                     _transparentBackground.SetActive(false);
                     break;
             }
-
-            // Reset the lyrics
-            _lyricText.text = string.Empty;
-            _nextLyricText.text = string.Empty;
-
+            // How much time before a phrase starts should it be displayed?
             _upcomingLyricsThreshold = SettingsManager.Settings.UpcomingLyricsTime.Value;
         }
 
@@ -72,18 +65,55 @@ namespace YARG.Gameplay.HUD
         {
             _lyrics = chart.Lyrics;
             if (_lyrics.Phrases.Count < 1)
+            {
                 gameObject.SetActive(false);
+                return;
+            }
+            _lyricA.gameObject.SetActive(true);
+            _lyricB.gameObject.SetActive(true);
         }
 
         private void Update()
         {
             const double PHRASE_DISTANCE_THRESHOLD = 1.0;
 
-            var phrases = _lyrics.Phrases;
 
+            var phrases = _lyrics.Phrases;
+            float timeToNextPhrase = (float) (phrases[_currentPhraseIndex].Time - GameManager.SongTime);
+
+
+            var activePhrase = _currentPhraseIndex % 2 == 0 ? _lyricA : _lyricB;
+            var inactivePhrase = _currentPhraseIndex % 2 == 0 ? _lyricB : _lyricA;
+            /*
+            Conditions for lyrics displaying:
+            1. If there is no lyric in the main bar, display the next lyric in the main bar if it is within the _upcomingLyricsThreshold
+            2. If the current lyric is in the main bar, display the next lyric in the upcoming bar if the end of the current lyric - the start of the next lyric is greater than the PHRASE_DISTANCE_THRESHOLD
+            3. Once a lyric finishes, it automatically moves out of the main bar (handled by Lyric.cs)
+            4. If a lyric is in the upcoming bar, it will move to the main bar when the other moves out.
+            */
+            if (!activePhrase.isInMainBar && !inactivePhrase.isInMainBar && timeToNextPhrase <= _upcomingLyricsThreshold)
+            {
+                activePhrase.SetPhrase(phrases[_currentPhraseIndex]);
+                activePhrase.TransitionToMain(activePhrase.DEFAULT_ANIMATION_TIME);
+            }
+            if (_currentPhraseIndex + 1 >= phrases.Count)
+            {
+                activePhrase.timeOfNextPhrase = double.MaxValue; // To ensure the last phrase animates out properly
+                return;
+            }
+            if (activePhrase.isInMainBar && !inactivePhrase.isInMainBar && phrases[_currentPhraseIndex + 1].Time - phrases[_currentPhraseIndex].TimeEnd <= _upcomingLyricsThreshold)
+            {
+                inactivePhrase.SetPhrase(phrases[_currentPhraseIndex + 1]);
+            }
+            // if there is no lyric in the main bar, display the next lyric in the main bar
+            if (!activePhrase.isInMainBar && !inactivePhrase.isInMainBar)
+            {
+                inactivePhrase.TransitionToMain(activePhrase.DEFAULT_ANIMATION_TIME);
+            }
+            activePhrase.timeOfNextPhrase = phrases[_currentPhraseIndex + 1].TimeEnd; // This is to handle charts where two phrases end within 0.1 seconds of each other
             // If the current phrase ended AND
             while (_currentPhraseIndex < phrases.Count && phrases[_currentPhraseIndex].TimeEnd <= GameManager.SongTime &&
-                 // Was the last phrase
+                // Was the last phrase
                 (_currentPhraseIndex + 1 == phrases.Count ||
                  // OR if the next phrase is one second or more away (leading to an empty bar)
                  phrases[_currentPhraseIndex + 1].Time - phrases[_currentPhraseIndex].TimeEnd >= PHRASE_DISTANCE_THRESHOLD ||
@@ -91,109 +121,9 @@ namespace YARG.Gameplay.HUD
                  phrases[_currentPhraseIndex + 1].Time <= GameManager.SongTime))
             {
                 _currentPhraseIndex++;
-                _currentLyricIndex = 0;
-                _lyricText.text = string.Empty;
             }
 
-            // Exit if we've complete all phrases
-            if (_currentPhraseIndex == phrases.Count)
-                return;
-
-            SetUpcomingLyrics(phrases);
-
-            // Exit if it's not time to show lyrics
-            if (GameManager.SongTime < phrases[_currentPhraseIndex].Time)
-                return;
-
-            var lyrics = phrases[_currentPhraseIndex].Lyrics;
-
-            // Check following lyrics
-            int currIndex = _currentLyricIndex;
-            while(currIndex < lyrics.Count && lyrics[currIndex].Time <= GameManager.SongTime)
-                currIndex++;
-
-            // No update necessary
-            if (_currentLyricIndex == currIndex)
-                return;
-
-            // Construct lyrics to be displayed
-            using var output = ZString.CreateStringBuilder(true);
-
-            // Start highlight
-            output.Append("<color=#5CB9FF>");
-
-            int i = 0;
-            while (i < currIndex)
-            {
-                var lyric = lyrics[i++];
-                output.Append(lyric.Text);
-                if (!lyric.JoinWithNext && i < lyrics.Count)
-                    output.Append(' ');
-            }
-
-            // End highlight
-            output.Append("</color>");
-
-            while (i < lyrics.Count)
-            {
-                var lyric = lyrics[i++];
-                output.Append(lyric.Text);
-                if (!lyric.JoinWithNext && i < lyrics.Count)
-                    output.Append(' ');
-            }
-
-            _currentLyricIndex = currIndex;
-            _lyricText.SetText(output);
         }
 
-
-        /// <summary>
-        /// Handles showing and hiding upcoming lyrics.
-        /// </summary>
-        private void SetUpcomingLyrics(List<LyricsPhrase> phrases)
-        {
-            // Exit if there are no upcoming lyrics
-            if (_currentPhraseIndex + 1 == phrases.Count)
-            {
-                _nextLyricText.text = null;
-                return;
-            }
-
-            // If we're in the current phrase already but lyrics haven't started
-            if (GameManager.SongTime >= phrases[_currentPhraseIndex].Time - _upcomingLyricsThreshold &&
-                _lyricText.text == string.Empty)
-            {
-                // Show the upcoming lyric in the main lyrics text box
-                _lyricText.SetText(BuildPhraseString(phrases[_currentPhraseIndex]));
-            }
-            // If the next phrase is soon
-            else if (GameManager.SongTime >= phrases[_currentPhraseIndex + 1].Time - _upcomingLyricsThreshold ||
-                // OR it appears soon after the current playing phrase
-                (phrases[_currentPhraseIndex + 1].Time - phrases[_currentPhraseIndex].TimeEnd <
-                    _upcomingLyricsThreshold && _lyricText.text != string.Empty))
-            {
-                // Show the upcoming lyric in the upcoming lyrics text box
-                _nextLyricText.SetText(BuildPhraseString(phrases[_currentPhraseIndex + 1]));
-            }
-            else
-            {
-                // Hide the upcoming lyrics. Hiding the main lyrics text is handled in Update.
-                _nextLyricText.text = null;
-            }
-        }
-
-        private Utf16ValueStringBuilder BuildPhraseString(LyricsPhrase phrase)
-        {
-            using var output = ZString.CreateStringBuilder();
-            int i = 0;
-            while (i < phrase.Lyrics.Count)
-            {
-                var lyric = phrase.Lyrics[i++];
-                output.Append(lyric.Text);
-                if (!lyric.JoinWithNext && i < phrase.Lyrics.Count)
-                    output.Append(' ');
-            }
-            return output;
-        }
     }
 }
