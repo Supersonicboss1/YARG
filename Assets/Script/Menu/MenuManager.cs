@@ -21,6 +21,7 @@ namespace YARG.Menu
             CareerList,
             Career,
             GameModes,
+            Online,
         }
 
         /// <summary>

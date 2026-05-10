@@ -78,6 +78,11 @@ namespace YARG.Menu.Main
             MenuManager.Instance.PushMenu(MenuManager.Menu.GameModes);
         }
 
+        public void Online()
+        {
+            MenuManager.Instance.PushMenu(MenuManager.Menu.Online);
+        }
+
         public void Profiles()
         {
             MenuManager.Instance.PushMenu(MenuManager.Menu.ProfileList);
