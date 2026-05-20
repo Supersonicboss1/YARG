@@ -20,9 +20,11 @@ using YARG.Gameplay.Visuals;
 using YARG.Input;
 using YARG.Integration;
 using YARG.Localization;
+using YARG.Menu;
 using YARG.Menu.Navigation;
 using YARG.Menu.Persistent;
 using YARG.Menu.ScoreScreen;
+using YARG.Online;
 using YARG.Playback;
 using YARG.Player;
 using YARG.Playlists;
@@ -82,10 +84,28 @@ namespace YARG.Gameplay
         /// </summary>
         public IReadOnlyList<YargPlayer> YargPlayers { get; private set;}
 
+        /// <summary>
+        /// True when the gameplay session is part of an online lobby. Set by the lobby
+        /// orchestrator before the gameplay scene is loaded; cleared on scene teardown.
+        /// While true: pause UI is suppressed, the engine manager runs without band-level
+        /// aggregation, and the local player's inputs are mirrored over the network.
+        /// </summary>
+        public static bool IsOnline { get; set; }
+
+        /// <summary>
+        /// The director for the current online session, cached in <see cref="Awake"/>
+        /// from <see cref="OnlineSessionDirector.Current"/>. Null when <see cref="IsOnline"/>
+        /// is false. <see cref="Gameplay.Player.BasePlayer"/> reads this through its
+        /// GameManager reference instead of touching the static directly.
+        /// </summary>
+        public OnlineSessionDirector OnlineSession { get; private set; }
+
         private List<BasePlayer> _players;
 
         public int TotalPlayers      => _players.Count;
         public int ActivePlayerCount => _players.Count(player => player.IsActive);
+
+        public bool IsSongReady { get; private set; } = false;
 
         public bool IsSongStarted { get; private set; } = false;
 
@@ -131,7 +151,7 @@ namespace YARG.Gameplay
         /// <inheritdoc cref="SongRunner.Paused"/>
         public bool Paused => _songRunner?.Paused ?? true;
 
-        public bool CanPause => !Paused && !PlayerHasFailed && !IsHudEditing &&
+        public bool CanPause => !IsOnline && !Paused && !PlayerHasFailed && !IsHudEditing &&
             !DialogManager.Instance.IsDialogShowing &&
             (!IsPractice || PracticeManager.HasSelectedSection);
 
@@ -186,6 +206,8 @@ namespace YARG.Gameplay
 
         private bool _isReplaySaved;
         private int _originalSleepTimeout;
+        private bool _breBoxActive;
+        private bool _gameCompleteSent;
 
         private StemMixer _mixer;
         public  StemMixer  Mixer => _mixer;
@@ -215,8 +237,31 @@ namespace YARG.Gameplay
             PracticeManager = GetComponent<PracticeManager>();
             BackgroundManager = GetComponent<BackgroundManager>();
             EngineManager = new EngineManager();
+            if (IsOnline)
+            {
+                // Per-player scoring only — no band aggregation, no unison bonuses, no
+                // band multiplier sharing. Each remote engine on this client is computed
+                // independently and must agree with the same engine on its owning peer.
+                EngineManager.BandFeaturesEnabled = false;
+            }
 
-            YargPlayers = PlayerContainer.Players;
+            if (IsOnline)
+            {
+                OnlineSession = OnlineSessionDirector.Current;
+                if (OnlineSession == null)
+                {
+                    YargLogger.LogError(
+                        "GameManager: IsOnline is true but OnlineSessionDirector.Current is null; " +
+                        "aborting back to menu.");
+                    BailOutToMenu();
+                    return;
+                }
+                YargPlayers = OnlineSession.Players;
+            }
+            else
+            {
+                YargPlayers = PlayerContainer.Players;
+            }
 
             Song = GlobalVariables.State.CurrentSong;
             ReplayInfo = GlobalVariables.State.CurrentReplay;
@@ -230,7 +275,7 @@ namespace YARG.Gameplay
             {
                 YargLogger.LogError("Null song set when loading gameplay!");
 
-                GlobalVariables.Instance.LoadScene(SceneIndex.Menu);
+                BailOutToMenu();
                 return;
             }
 
@@ -291,6 +336,11 @@ namespace YARG.Gameplay
 
             // Reset sleep timeout setting
             Screen.sleepTimeout = _originalSleepTimeout;
+
+            // Clear the online flag so the next song (likely solo) doesn't inherit online
+            // semantics. The orchestrator sets this back to true before each online scene
+            // load.
+            IsOnline = false;
         }
 
         private void Update()
@@ -298,8 +348,8 @@ namespace YARG.Gameplay
             var keyboard = Keyboard.current;
             if (keyboard != null)
             {
-                // Pause/unpause
-                if (keyboard.escapeKey.wasPressedThisFrame)
+                // Online sessions cannot pause independently of the other peers.
+                if (keyboard.escapeKey.wasPressedThisFrame && !IsOnline)
                 {
                     TogglePause();
                 }
@@ -666,6 +716,15 @@ namespace YARG.Gameplay
                 Pause(false);
                 return true;
             }
+
+            // Notify the relay that this peer's song is over. The server holds GameEnd until
+            // every peer reports (or the straggler timer fires), so other clients keep
+            // receiving any remaining inputs from us in flight.
+            if (IsOnline && !_gameCompleteSent)
+            {
+                _gameCompleteSent = true;
+                OnlineSession?.SendGameComplete();
+            }
 #nullable enable
             ReplayInfo? replayInfo = null;
 #nullable disable
@@ -725,6 +784,14 @@ namespace YARG.Gameplay
             foreach (var player in ActivePlayers)
             {
                 var profile = player.Player.Profile;
+
+                // Remote players' scores belong to other users — never write them to our
+                // local score store (the YargProfile.Id is a throwaway Guid from the remote
+                // constructor, so attribution would be meaningless anyway).
+                if (player.Player.IsRemote)
+                {
+                    continue;
+                }
 
                 // Skip bots and anyone that's obviously cheating.
                 if (!ScoreContainer.IsSoloScoreValid(SongSpeed, player.Player))
@@ -830,6 +897,21 @@ namespace YARG.Gameplay
         public void ForceQuitSong()
         {
             GlobalVariables.State = PersistentState.Default;
+            BailOutToMenu();
+        }
+
+        /// <summary>
+        /// Common Gameplay → Menu exit path. When we're in an online lobby
+        /// session, sets MenuManager's override so the next MenuScene Start
+        /// lands the user on LobbyView. Otherwise behaves identically to a
+        /// plain <c>LoadScene(Menu)</c>.
+        /// </summary>
+        internal static void BailOutToMenu()
+        {
+            if (IsOnline && LobbyHubSession.Current?.CurrentLobby != null)
+            {
+                MenuManager.SetOverrideOpenMenu(MenuManager.Menu.LobbyView);
+            }
             GlobalVariables.Instance.LoadScene(SceneIndex.Menu);
         }
 
@@ -879,6 +961,14 @@ namespace YARG.Gameplay
             foreach (var player in ActivePlayers)
             {
                 if (player.IsBot)
+                {
+                    continue;
+                }
+
+                // Remote players' inputs aren't authored on this machine — saving an empty
+                // input stream would yield a replay frame that can't be reproduced. Skip
+                // them; the local player's replay still saves normally.
+                if (player.Player.IsRemote)
                 {
                     continue;
                 }
@@ -947,6 +1037,11 @@ namespace YARG.Gameplay
                 SetEditHUD(on: false);
             }
 
+            if (IsOnline)
+            {
+                return;
+            }
+
             if ((!IsPractice || PracticeManager.HasSelectedSection) &&
                 !DialogManager.Instance.IsDialogShowing &&
                 !PlayerHasFailed)
@@ -957,7 +1052,9 @@ namespace YARG.Gameplay
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (!hasFocus && !Paused && SettingsManager.Settings.PauseOnFocusLoss.Value)
+            // Online sessions can't pause — alt-tabbing must keep the engine running so we
+            // stay in sync with the other peers.
+            if (!hasFocus && !Paused && !IsOnline && SettingsManager.Settings.PauseOnFocusLoss.Value)
             {
                 SetPaused(true);
             }

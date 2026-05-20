@@ -186,8 +186,10 @@ namespace YARG.Gameplay.Player
 
             _hud.ShowPlayerName(player, needleIndex);
 
-            // Create and start an input context for the mics
-            if (!Player.IsReplay && player.Bindings.Microphones.Count > 0)
+            // Create and start an input context for the mic. Remote players have no
+            // local mic — their pitch samples arrive over the network as GameInputs.
+            if (!Player.IsReplay && !Player.IsRemote &&
+                player.Bindings != null && player.Bindings.Microphones.Count > 0)
             {
                 _inputContext = new MicInputContext(player.Bindings.Microphones, GameManager);
                 _inputContext.Start();
@@ -378,8 +380,10 @@ namespace YARG.Gameplay.Player
 
         protected override void UpdateInputs(double time)
         {
-            // Push all inputs from mic
-            if (!Player.IsReplay && _inputContext != null)
+            // Push all inputs from the local mic. Remote players have no local mic — their
+            // pitch samples arrive over the network like any other GameInput, drained by
+            // the remote-input branch in BasePlayer.UpdateInputs.
+            if (!Player.IsReplay && !Player.IsRemote && _inputContext != null)
             {
                 foreach (var input in _inputContext.GetInputsFromMic())
                 {

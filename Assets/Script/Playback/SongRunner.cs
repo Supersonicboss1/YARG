@@ -247,10 +247,9 @@ namespace YARG.Playback
         /// Creates a song runner at the given position and speed.
         /// </summary>
         /// <remarks>
-        /// The created song runner will be in an unstarted state. Upon calling <see cref="Update"/>,
-        /// the runner will attempt to start and re-initialize its time values, to adjust for loading
-        /// lag. If the current frame took too long to process before the update started, then starting
-        /// will be skipped and attempted again next frame.
+        /// The created song runner will be in an unstarted state. Calling <see cref="Update"/> will
+        /// attempt to start it after guarding against a lagged loading frame. Call
+        /// <see cref="BeginPlayback"/> to start explicitly, or to coordinate playback with an online cue.
         /// <br/>
         /// Since the runner starts paused, anything that might potentially interact with it before
         /// starting must respect the paused state, otherwise incorrect behavior may happen.
@@ -324,9 +323,16 @@ namespace YARG.Playback
             _rewindTween = null;
         }
 
-        private void Start()
+        /// <summary>
+        /// Explicit playback kick. Called by <see cref="GameManager"/> before flipping
+        /// <c>IsSongStarted = true</c>. Rebases the time reference and starts playback; callers
+        /// may request the solo loading-frame guard, while online callers start at the server cue.
+        /// </summary>
+        public void BeginPlayback(bool deferIfFrameLagged = false)
         {
-            YargLogger.LogDebug("Starting song runner");
+            if (Started) return;
+            if (deferIfFrameLagged && ShouldDelayStart()) return;
+            YargLogger.LogDebug("Beginning song runner playback");
 
             // Re-initialize song times to avoid lag issues
             InitializeSongTime(InputTime, 0);
@@ -339,7 +345,8 @@ namespace YARG.Playback
 
         public void Update()
         {
-            // Runner is lazy-started to avoid timing issues with lag
+            // Solo playback retains the loading-frame guard; online playback is kicked
+            // explicitly at the server-aligned cue and therefore never reaches this path.
             if (!Started)
             {
                 if (ShouldDelayStart())
@@ -347,7 +354,7 @@ namespace YARG.Playback
                     return;
                 }
 
-                Start();
+                BeginPlayback();
             }
 
             UpdateFrameDebuggerPause();

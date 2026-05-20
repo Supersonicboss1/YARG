@@ -44,6 +44,7 @@ namespace YARG.Gameplay
 
             GameManager.ChartLoaded += _OnChartLoaded;
             GameManager.SongLoaded += _OnSongLoaded;
+            GameManager.SongReady += _OnSongReady;
             GameManager.SongStarted += _OnSongStarted;
         }
 
@@ -59,6 +60,7 @@ namespace YARG.Gameplay
 
             GameManager.ChartLoaded -= _OnChartLoaded;
             GameManager.SongLoaded -= _OnSongLoaded;
+            GameManager.SongReady -= _OnSongReady;
             GameManager.SongStarted -= _OnSongStarted;
         }
 
@@ -74,6 +76,13 @@ namespace YARG.Gameplay
             GameManager.SongLoaded -= _OnSongLoaded;
 
             OnSongLoaded();
+        }
+
+        private void _OnSongReady()
+        {
+            GameManager.SongReady -= _OnSongReady;
+
+            OnSongReady();
         }
 
         private void _OnSongStarted()
@@ -97,6 +106,10 @@ namespace YARG.Gameplay
         }
 
         protected virtual void OnSongLoaded()
+        {
+        }
+
+        protected virtual void OnSongReady()
         {
         }
 

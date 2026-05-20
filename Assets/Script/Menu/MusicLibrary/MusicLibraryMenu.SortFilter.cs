@@ -123,7 +123,7 @@ namespace YARG.Menu.MusicLibrary
             recommendationSetting.SetValueWithoutNotify(recommendationCount);
 
             var recommendations = RecommendedSongs.GetRecommendedSongs(
-                YARG.Menu.Filters.FiltersMenu.ActiveFilterPredicate, recommendationCount);
+                YARG.Menu.Filters.FiltersMenu.ActiveFilterPredicate, recommendationCount, AllowedSongHashes);
             _recommendedSongs = recommendations.Length > 0 ? recommendations : null;
         }
 
@@ -141,6 +141,13 @@ namespace YARG.Menu.MusicLibrary
             {
                 _sortedSongs = _searchField.Search(SettingsManager.Settings.LibrarySort);
                 // _sortedSongs = ApplyCollapsedSectionsForCurrentSort(_sortedSongs);
+
+                bool shouldApplyAllowedSongs = AllowedSongHashes != null;
+                if (shouldApplyAllowedSongs)
+                {
+                    _sortedSongs = ApplyFilterPredicate(_sortedSongs, s => AllowedSongHashes.Contains(s.Hash));
+                }
+
                 _searchField.gameObject.SetActive(MenuState == MenuState.Library);
             }
             else
@@ -151,6 +158,9 @@ namespace YARG.Menu.MusicLibrary
                 int count = 0;
                 foreach (var hash in SelectedPlaylist.SongHashes)
                 {
+                    if (AllowedSongHashes != null && !AllowedSongHashes.Contains(hash))
+                        continue;
+
                     // Get the first song with the specified hash
                     if (SongContainer.SongsByHash.TryGetValue(hash, out var song))
                     {
@@ -176,7 +186,8 @@ namespace YARG.Menu.MusicLibrary
             var predicate = YARG.Menu.Filters.FiltersMenu.ActiveFilterPredicate;
             bool inLibrary = !PlaylistMode && MenuState == MenuState.Library;
             bool shouldApplyFilters = inLibrary && predicate != null;
-            bool shouldShowFilteredCounts = inLibrary && (_searchField.IsSearching || predicate != null);
+            bool shouldShowFilteredCounts = inLibrary &&
+                (_searchField.IsSearching || predicate != null || AllowedSongHashes != null);
 
             if (shouldApplyFilters)
                 _sortedSongs = ApplyFilterPredicate(_sortedSongs, predicate);
@@ -193,7 +204,7 @@ namespace YARG.Menu.MusicLibrary
 
             RequestViewListUpdate();
 
-            if (shouldApplyFilters)
+            if (shouldApplyFilters || (inLibrary && AllowedSongHashes != null))
             {
                 EnsureValidSelectionAfterFilter();
             }

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using YARG.Core.Song;
 using YARG.Helpers.Extensions;
@@ -6,27 +7,33 @@ using YARG.Playlists;
 using YARG.Scores;
 using YARG.Song;
 
+using Random = UnityEngine.Random;
+
 namespace YARG.Menu.MusicLibrary
 {
     public static class RecommendedSongs
     {
         private static readonly HashSet<HashWrapper> _recommendedThisSession = new();
 
-        public static SongEntry[] GetRecommendedSongs(System.Func<SongEntry, bool> predicate,
-            int recommendationCount)
+        public static SongEntry[] GetRecommendedSongs(
+            Func<SongEntry, bool> predicate,
+            int recommendationCount,
+            HashSet<HashWrapper> allowedHashes = null)
         {
             List<SongEntry> eligibleSongs = new(SongContainer.Count);
             foreach (SongEntry song in SongContainer.Songs)
             {
-                if (predicate == null || predicate(song))
+                if ((predicate == null || predicate(song)) &&
+                    (allowedHashes == null || allowedHashes.Contains(song.Hash)))
                 {
                     eligibleSongs.Add(song);
                 }
             }
+
             // Recommendations provide no value when the complete filtered result set is already
             // small enough to display, and would only duplicate those songs above the main list.
             if (recommendationCount <= 0 || eligibleSongs.Count <= recommendationCount)
-                return System.Array.Empty<SongEntry>();
+                return Array.Empty<SongEntry>();
 
             List<SongEntry> newEligibleSongs = new(eligibleSongs.Count);
             foreach (SongEntry song in eligibleSongs)
