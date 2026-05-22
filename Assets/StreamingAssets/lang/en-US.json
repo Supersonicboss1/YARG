@@ -293,9 +293,11 @@
             "OpenLaneAlways": "Open Lane Always",
             "OpenLaneWhenCharted": "Open Lane When Charted",
             "Ready": "Ready",
+            "Unready": "Unready",
             "SitOut": "Sit Out",
 			"Disconnect" : "Disconnect",
             "Done": "Done",
+            "WaitingForPlayers": "Waiting for other players ({0}/{1})",
             "WarningPlayerNoInputDevice" : "This player has no input device assigned! Assign one from the Profiles menu.",
             "WarningVocalistNoMicrophone" : "This vocalist has no microphone assigned! Assign one from the Profiles menu."
         },
@@ -347,7 +349,15 @@
             "Name": "Online",
             "CreateLobby": "Create Lobby",
             "Filters": "Filters",
-            "JoinByCode": "Join By Code"
+            "JoinByCode": "Join By Code",
+            "AddSong": "Add Song",
+            "StartGame": "Start Game",
+            "LobbyHeaderSubText": "Online",
+            "PlayersHeader": "Players ({0}/{1})",
+            "SongsQueued": {
+                "Singular": "1 Song Queued",
+                "Plural": "{0} Songs Queued"
+            }
         },
         "Main": {
             "MessageOfTheDay": "<align=center><size=32><b>Welcome to v0.15!</b></size></align>\n\nv0.15 is a major update that adds many highly requested and necessary gameplay features such as roll/trill lanes and Big \"YARG\" endings, as well as revamped user interface in the song selection and results screen, drum lane customization, automatic genre categorization, experimental custom vocalist characters in venues, and more.\n\n<b>If you have any feedback or find any bugs, please let us know on Discord or GitHub.</b>\n\nHappy YARGin'!",

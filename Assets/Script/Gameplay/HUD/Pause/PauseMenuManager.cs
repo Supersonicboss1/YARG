@@ -6,6 +6,7 @@ using System.Threading;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using YARG.Core.Logging;
 using YARG.Helpers.Extensions;
 using YARG.Playlists;
 using YARG.Song;
@@ -26,7 +27,8 @@ namespace YARG.Gameplay.HUD
             QuickSettings,
             SettingsMenu,
             SetlistPause,
-            FailPause
+            FailPause,
+            OnlinePause,
         }
 
         private Dictionary<Menu, PauseMenuObject> _menus;
