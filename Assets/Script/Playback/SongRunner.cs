@@ -324,22 +324,32 @@ namespace YARG.Playback
         }
 
         /// <summary>
-        /// Explicit playback kick. Called by <see cref="GameManager"/> before flipping
-        /// <c>IsSongStarted = true</c>. Rebases the time reference and starts playback; callers
-        /// may request the solo loading-frame guard, while online callers start at the server cue.
+        /// Deterministic kick for playback. Called by <see cref="GameManager"/> immediately
+        /// before flipping <c>IsSongStarted = true</c>. Rebases the time reference and starts
+        /// the mixer so gameplay time advances from <c>-preRollSeconds</c> to 0 before the
+        /// audio reaches the start of the song — i.e. <paramref name="preRollSeconds"/> of
+        /// visible track-scrolling animation before audio starts.
+        ///
+        /// Solo passes <see cref="SONG_START_DELAY"/>. Online absorbs the wall-clock-alignment
+        /// wait into the pre-roll by passing <c>secondsUntilOrigin + SONG_START_DELAY</c>, so
+        /// the highway-scrolling animation is what the user sees during the wait instead of
+        /// the loading screen — audio still lands exactly at <c>SongOriginUtcMs + SONG_START_DELAY</c>
+        /// on every peer.
         /// </summary>
-        public void BeginPlayback(bool deferIfFrameLagged = false)
+        public void BeginPlayback(double preRollSeconds = SONG_START_DELAY)
         {
             if (Started) return;
-            if (deferIfFrameLagged && ShouldDelayStart()) return;
-            YargLogger.LogDebug("Beginning song runner playback");
+            YargLogger.LogFormatDebug("Beginning song runner playback (preRoll={0:0.000}s)", preRollSeconds);
 
-            // Re-initialize song times to avoid lag issues
-            InitializeSongTime(InputTime, 0);
+            // Re-anchor so gameplay time begins at -preRollSeconds. The audio synchronizer
+            // holds the mixer at the start of the file until the timeline reaches song time 0.
+            // Online can extend this beyond the constructor-time start delay to absorb the
+            // wall-clock-alignment wait.
+            InitializeSongTime(0, preRollSeconds);
+
             double startInputTime = InputTime;
             PrepareAudioAt(startInputTime);
             PlayPreparedAudioAt(startInputTime);
-
             Started = true;
         }
 

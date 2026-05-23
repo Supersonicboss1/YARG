@@ -1397,7 +1397,10 @@ namespace YARG.Gameplay.Player
             {
                 UpdateMuteState(note, true);
 
-                if (LastCombo >= 10)
+                // Remote players' misses run on the mirror engine — playing the miss
+                // SFX + camera punch for every remote miss is noisy ambient feedback
+                // the local user can't act on. Visual combo break still happens.
+                if (LastCombo >= 10 && !Player.IsRemote)
                 {
                     GlobalAudioHandler.PlaySoundEffect(SfxSample.NoteMiss);
                     CameraPositioner.Punch();
