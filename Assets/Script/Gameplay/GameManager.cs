@@ -253,6 +253,19 @@ namespace YARG.Gameplay
                 // LobbyHubSession.LeaveCurrentGame, or a network failure).
                 // Without this the track keeps rendering empty.
                 OnlineSession.RemotePlayerLeft += HideRemotePlayerHighway;
+
+                // If the session is already dead by the time we attach (e.g.
+                // GameEnd raced ahead of GameManager.Start) we still want to
+                // bail rather than play through. Otherwise we wire the live
+                // signal and let the next external death route us out.
+                if (OnlineSession.SessionAbortedExternally)
+                {
+                    YargLogger.LogWarning(
+                        "GameManager: OnlineSession already aborted before Start subscribed — bailing.");
+                    BailOutToMenu();
+                    return;
+                }
+                OnlineSession.SessionEndedExternally += OnOnlineSessionEnded;
             }
             else
             {
@@ -336,6 +349,7 @@ namespace YARG.Gameplay
             if (OnlineSession != null)
             {
                 OnlineSession.RemotePlayerLeft -= HideRemotePlayerHighway;
+                OnlineSession.SessionEndedExternally -= OnOnlineSessionEnded;
             }
 
             // Clear the online flag.
@@ -1010,6 +1024,41 @@ namespace YARG.Gameplay
             }, playerEntries);
         }
 
+        // Latches so the session-ended toast / scene transition fires exactly once
+        // even if both GameEnded and Disconnected race in.
+        private bool _onlineSessionEndedHandled;
+
+        /// <summary>Invoked on the Unity main thread when the underlying online
+        /// session dies mid-load or mid-song (server-broadcast GameEnd, transport
+        /// disconnect, or last remote leaving). Bails out of the gameplay scene
+        /// gracefully — without this, the song plays through as a fake-offline
+        /// run with frozen remote highways.</summary>
+        private void OnOnlineSessionEnded(bool hadLocalProgress)
+        {
+            if (_onlineSessionEndedHandled) return;
+            _onlineSessionEndedHandled = true;
+
+            YargLogger.LogFormatWarning(
+                "GameManager: online session ended externally (hadLocalProgress={0}); bailing out of gameplay.",
+                hadLocalProgress);
+
+            // User-visible feedback. Toast survives the scene transition because
+            // ToastManager lives on the persistent scene.
+            try
+            {
+                ToastManager.ToastWarning(
+                    YARG.Localization.Localize.Key("Menu.Online.Toast.SessionEndedDuringGame"));
+            }
+            catch (Exception ex) { YargLogger.LogException(ex); }
+
+            // Clear the IsOnline flag and any pending engine work so the bail
+            // path doesn't try to send a final snapshot through a dead session.
+            // ForceQuitSong handles the LeaveCurrentGame call (harmless if the
+            // session is already torn down server-side — the LobbyHub call
+            // tolerates a no-op).
+            ForceQuitSong();
+        }
+
         public void ForceQuitSong()
         {
             // Mid-song bail-out: tear down the UDP game session so the relay
@@ -1174,7 +1223,7 @@ namespace YARG.Gameplay
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (!hasFocus && !Paused && !IsOnline && SettingsManager.Settings.PauseOnFocusLoss.Value)
+            if (!hasFocus && !Paused && SettingsManager.Settings.PauseOnFocusLoss.Value)
             {
                 SetPaused(true);
             }
