@@ -129,13 +129,6 @@ namespace YARG.Gameplay
 
             YargLogger.LogFormatInfo("Loading song {0} - {1}", Song.Name, Song.Artist);
 
-            // ──────── Phase 1+2: load and synchronize, all under the loading screen ────────
-            // Firing SongReady inside the using block preserves today's timing — subscriber
-            // setup work (e.g. QuickSettings caching its FailMeter reference) runs while the
-            // loading screen is still visible. The online clock-sync and cue-wait run under
-            // the loading screen too; the cue's wall-clock-alignment wait does NOT — instead
-            // it gets folded into the visible pre-roll so the user sees the highway scrolling
-            // during it (set via the preRoll value below).
             double preRoll = SONG_START_DELAY;
             using (var context = new LoadingContext())
             {
@@ -331,19 +324,11 @@ namespace YARG.Gameplay
                 YargLogger.LogFormatDebug("Audio calibration: {0}, video calibration: {1}, song offset: {2}",
                     _songRunner.AudioCalibration, _songRunner.VideoCalibration, _songRunner.SongOffset);
 
-                // All per-client init is done. Audio system is fully prepared (mixer +
-                // stems loaded, SongRunner constructed). Announce ready so subscribers
-                // can do their last setup pass under the loading screen — must NOT do
-                // per-frame gameplay work; that stays gated by SongStarted below.
                 IsSongReady = true;
                 _songReady?.Invoke();
 
-                // Online sync + cue wait runs WHILE the loading screen is still up; the
-                // wall-clock-alignment wait is NOT held here — instead it gets absorbed
-                // into the visible pre-roll below so the user sees the highway scrolling
-                // during it. Solo falls through immediately.
                 preRoll = await NegotiateStartTimingAsync(context);
-            }   // ← LoadingContext disposed: loading screen hidden, menu input re-enabled
+            }
 
             // ──────── Phase 3: deterministic playback kick ────────
             // The pre-roll advances the visual timeline from -preRoll to 0 while the mixer
@@ -371,11 +356,8 @@ namespace YARG.Gameplay
         }
 
         /// <summary>
-        /// Online start handshake: sync the local→server clock offset, announce PeerReady,
-        /// wait for the server's GameStartCue. Returns the desired pre-roll length —
-        /// solo gets <see cref="SONG_START_DELAY"/>; online gets <c>secondsUntilOrigin +
-        /// SONG_START_DELAY</c> so the wall-clock-alignment wait happens during a visible
-        /// track-scrolling animation rather than under the loading screen.
+        /// Online: syncs clocks, announces ready, waits for start cue.
+        /// Returns pre-roll length (solo: SONG_START_DELAY; online: alignment wait + delay).
         /// </summary>
         private async UniTask<double> NegotiateStartTimingAsync(LoadingContext context)
         {
@@ -383,12 +365,7 @@ namespace YARG.Gameplay
 
             context.SetLoadingText(Localize.Key("Menu.Online.Handshake.SyncingPeers"));
 
-            // Sync the local→server clock offset over UDP before announcing PeerReady.
-            // The cue carries a wall-clock SongOriginUtcMs picked by the server; without
-            // this offset, alignment across peers is bounded by whatever the OS-level
-            // clock skew happens to be (often 100ms+, sometimes seconds). The server
-            // gates the cue on PeerReady, so spending ~400ms here just shifts pre-roll
-            // into our budget — no protocol change needed.
+            // Sync clock offset before announcing ready so audio aligns across peers.
             if (ServerClockSync.Current != null)
             {
                 bool ok = await ServerClockSync.Current.RunSyncBurstAsync(
@@ -414,12 +391,7 @@ namespace YARG.Gameplay
             {
                 if (secondsUntilOrigin > 0)
                 {
-                    // Roll the wall-clock-alignment wait into the visible pre-roll. Every
-                    // peer's BeginPlayback fires roughly when its cue arrives, but each
-                    // uses a per-peer pre-roll length = (SongOriginUtcMs - now) + standard
-                    // pre-roll. Audio still lands at the same wall-clock instant on every
-                    // peer (within local clock skew), just preceded by a longer visible
-                    // ramp on peers whose cue arrived earlier.
+                    // Absorb wall-clock alignment wait into visible pre-roll.
                     YargLogger.LogFormatInfo(
                         "Online start: absorbing {0:0.000}s wall-clock wait into visible pre-roll",
                         secondsUntilOrigin);
@@ -588,17 +560,8 @@ namespace YARG.Gameplay
                         }
                     }
 
-                    // Skip if the player is sitting out — but ONLY for local players. A
-                    // remote can land in CreatePlayers with SittingOut=true if the game
-                    // server's RemotePeerLeftPacket arrived during the cue-handshake
-                    // window (OnRemotePeerLeftEvent flips SittingOut on receipt, and
-                    // RemotePlayerLeft fires before _players exists so the
-                    // HideRemotePlayerHighway subscriber no-ops). Skipping here would
-                    // leave the remote sim out of _players entirely, so its engine
-                    // never ticks and the wire-event pipeline never delivers anything
-                    // visible for the whole song. Create them anyway and hide
-                    // post-init below so the sim keeps draining + the score panel
-                    // still represents them.
+                    // Skip local sitting-out players. Remote sitting-out players are
+                    // still created so the sim keeps draining; hidden post-init below.
                     if (player.SittingOut && !player.IsRemote)
                     {
                         YargLogger.LogFormatInfo(
@@ -609,9 +572,7 @@ namespace YARG.Gameplay
                     if (player.SittingOut && player.IsRemote)
                     {
                         YargLogger.LogFormatWarning(
-                            "CreatePlayers: remote player {0} (peerId={1}) is SittingOut already — " +
-                            "creating anyway and will hide highway. RemotePeerLeftPacket likely arrived " +
-                            "during game-start before _players existed.",
+                            "CreatePlayers: remote player {0} (peerId={1}) is SittingOut -- creating anyway, will hide highway.",
                             player.Profile?.Name ?? "<null>", player.RemotePeerId);
                     }
                     index++;
@@ -663,7 +624,6 @@ namespace YARG.Gameplay
                         {
                             highwayIndex++;
                             VocalTrack.gameObject.SetActive(true);
-                            // Position the vocal track at its highway slot so the shader's WorldPosToIndex maps it correctly
                             VocalTrack.transform.position = new Vector3(highwayIndex * TRACK_SPACING_X, 100, 0);
                             _trackViewManager.CreateVocalTrackView(highwayIndex);
 
@@ -723,12 +683,7 @@ namespace YARG.Gameplay
                     }
                 }
 
-                // Post-init pass: any remote player that was already SittingOut at the
-                // moment we entered CreatePlayers (because RemotePeerLeftPacket arrived
-                // during the cue handshake before _players existed) needs its highway
-                // hidden now that _players is populated — HideRemotePlayerHighway was a
-                // no-op when it fired. The sim is still in _remoteSimulators so wire
-                // events for that peer keep draining; we just don't render them.
+                // Hide highways for remotes that were already SittingOut before _players existed.
                 foreach (var basePlayer in _players)
                 {
                     if (basePlayer?.Player == null) continue;

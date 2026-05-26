@@ -281,12 +281,7 @@ namespace YARG.Gameplay.Player
             return engine;
         }
 
-        // Local-sender hook. Gates on the engine's freestyle state so we
-        // don't fanout pad hits that already have a matching NoteHit packet
-        // — those run through the prediction layer and are handled by the
-        // receiver's mirror engine. Free-play sections are exactly the gap
-        // where OnPadHit fires but no NoteHit does, so this hook is the
-        // wire's only signal for those pads.
+        // Only forward pad hits during free-play (coda/freestyle) -- normal hits use the prediction layer.
         private void ForwardFreePlayPadHitIfActive(
             DrumsAction action, bool wasNoteHit, bool wasNoteHitCorrectly,
             bool wasOverhitInLane, DrumNoteType type, float velocity)
@@ -299,13 +294,7 @@ namespace YARG.Gameplay.Player
                 GameManager.SongTime, (int) action, velocity);
         }
 
-        // Receiver hook. The remote-side mirror engine's IsCodaActive /
-        // freestyle state is kept in sync via EngineStateSnapshot, so the
-        // existing OnPadHit body produces the right visuals (coda lane
-        // bonus, fret flash, kick bounce) when we route the wire event back
-        // through it with sensible defaults for the not-present fields
-        // (wasNoteHit/wasNoteHitCorrectly/wasOverhitInLane: false, type:
-        // Normal — the sender's wire packet carries action + velocity only).
+        // Receiver: replay remote free-play pad hits through OnPadHit for visuals.
         private void OnRemoteFreePlayInput(int peerId, double songTime, int action, float velocity)
         {
             if (peerId != Player.RemotePeerId) return;
@@ -1074,10 +1063,7 @@ namespace YARG.Gameplay.Player
 
                 var lowestDelta = float.MaxValue;
 
-                // The fret array's animation functions take pads, so we need to know which pad is relevant for the
-                // current visual fret. If there are multiple (shared fret), we can send it either; the fret array
-                // forwards shared fret indices to the right fret. If we don't find any pads, we won't call any
-                // animations.
+                // Find the pad mapped to this visual fret (shared frets forward correctly).
                 int? padToPress = null;
 
                 foreach (var (pad, highwayOrderingInfo) in _highwayOrdering)

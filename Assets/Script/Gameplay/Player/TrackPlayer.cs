@@ -569,13 +569,6 @@ namespace YARG.Gameplay.Player
                 }
                 else if (Player.IsRemote)
                 {
-                    // Build the simulator. The mirror engine was already
-                    // constructed in CreateEngine and is identical-config to
-                    // the sender's. Notes come from the typed chart on this
-                    // TrackPlayer. The simulator's defaults (50 ms render
-                    // delay, 50 ms commit window, 250 ms rollback window)
-                    // are tuned for typical wifi RTT and are exposed via
-                    // constructor params if profiling argues for change.
                     var sim = new YARG.Core.Engine.Prediction.RemotePlayerSimulator<TNote>(
                         Engine, Notes);
                     director.RegisterRemoteSimulator(Player.RemotePeerId, sim);
@@ -942,10 +935,7 @@ namespace YARG.Gameplay.Player
             // If any of the current effects are drum fill, we need to react
             // when starpower goes from unavailable to available
 
-            // Remove past effects from current list
-            // This may actually fail if an effect is reused from the pool
-            // too quickly, but as long as it is only being used for setting
-            // drum fill visibility, it shouldn't break.
+            // Remove past effects from current list (may misfire if pool reuses too quickly).
             for (var i = 0; i < _currentEffects.Count; i++)
             {
                 var trackEffectElement = _currentEffects[i];
@@ -1397,9 +1387,7 @@ namespace YARG.Gameplay.Player
             {
                 UpdateMuteState(note, true);
 
-                // Remote players' misses run on the mirror engine — playing the miss
-                // SFX + camera punch for every remote miss is noisy ambient feedback
-                // the local user can't act on. Visual combo break still happens.
+                // Skip miss SFX for remote players -- not actionable for local user.
                 if (LastCombo >= 10 && !Player.IsRemote)
                 {
                     GlobalAudioHandler.PlaySoundEffect(SfxSample.NoteMiss);
