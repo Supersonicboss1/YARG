@@ -102,6 +102,18 @@ namespace YARG.Gameplay.Player
 
         public IReadOnlyList<GameInput> ReplayInputs => _replayInputs.AsReadOnly();
 
+        /// <summary>
+        /// Replaces this player's replay-input buffer with externally-supplied data.
+        /// </summary>
+        public void SetReplayInputsFromRemote(GameInput[] inputs)
+        {
+            _replayInputs.Clear();
+            if (inputs is { Length: > 0 })
+            {
+                _replayInputs.AddRange(inputs);
+            }
+        }
+
         private Dictionary<int, GameInput> LastInputs { get; } = new();
         private Dictionary<int, GameInput> InputsToSendOnResume { get; } = new();
 
@@ -117,6 +129,9 @@ namespace YARG.Gameplay.Player
 
         protected int  LastCombo;
         protected bool IsStemMuted;
+
+        // True once LeaveGame() ran; GameplayUpdate becomes a no-op.
+        public bool HasLeftGame { get; private set; }
 
         private List<GameInput> _replayInputs;
 
@@ -208,6 +223,11 @@ namespace YARG.Gameplay.Player
                 return;
             }
 
+            if (HasLeftGame)
+            {
+                return;
+            }
+
             if (!GameManager.Rewinding)
             {
                 UpdateInputs(GameManager.InputTime);
@@ -241,6 +261,21 @@ namespace YARG.Gameplay.Player
 
         // TODO Make this more generic
         public abstract void SetStemMuteState(bool muted);
+
+        /// <summary>Hide this player's highway and HUD.</summary>
+        public virtual void HideHighway()
+        {
+            gameObject.SetActive(false);
+        }
+
+        /// <summary>Retires the player after a mid-song disconnect.</summary>
+        public void LeaveGame()
+        {
+            if (HasLeftGame) return;
+            HasLeftGame = true;
+            SetStemMuteState(false);
+            HideHighway();
+        }
 
         public virtual void SetStarPowerFX(bool active)
         {

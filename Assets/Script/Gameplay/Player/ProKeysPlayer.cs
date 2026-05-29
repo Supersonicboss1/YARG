@@ -174,6 +174,8 @@ namespace YARG.Gameplay.Player
             return engine;
         }
 
+        protected override void OnRemoteBreLaneHit(int action) => OnLaneHit(action);
+
         protected override void FinishInitialization()
         {
             base.FinishInitialization();
@@ -614,6 +616,8 @@ namespace YARG.Gameplay.Player
 
             var breLaneIndex = _actionToBreLaneIndex[key];
             _breLaneIndexToMostRecentTime[breLaneIndex] = GameManager.VisualTime;
+
+            ForwardLaneHitToRemotes(key);
         }
 
         protected Dictionary<int, int> GetLaneIndexes(int leftmostKey)

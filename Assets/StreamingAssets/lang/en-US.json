@@ -298,8 +298,10 @@
 			"Disconnect" : "Disconnect",
             "Done": "Done",
             "WaitingForPlayers": "Waiting for other players ({0}/{1})",
+            "WaitingForPlayersUnknown": "Waiting for other players...",
             "WarningPlayerNoInputDevice" : "This player has no input device assigned! Assign one from the Profiles menu.",
-            "WarningVocalistNoMicrophone" : "This vocalist has no microphone assigned! Assign one from the Profiles menu."
+            "WarningVocalistNoMicrophone" : "This vocalist has no microphone assigned! Assign one from the Profiles menu.",
+            "SongSpeedLabel": "Song Speed: {0}"
         },
         "GameModes": {
             "Options": {
@@ -434,6 +436,10 @@
                 "Generic": "Some players haven't returned to the lobby yet."
             },
             "PreparingGame": "Preparing game...",
+            "GameCancelled": {
+                "Title": "Game cancelled",
+                "NotEnoughPlayers": "Not enough players remain in the lobby to start the game."
+            },
             "StartGameError": {
                 "Title": "Could not start game",
                 "AlreadyStarted": "The game has already started.",
@@ -615,6 +621,11 @@
             "StartShow": "Start The Show",
             "MoreOptionsAndGoToSection": "<align=left>More Options<br><size=80%>(Hold) Go to Section...</size></align>",
             "MoreOptions": "More Options",
+            "SongSpeed": "Song Speed ({0})",
+            "SongSpeedMenu": {
+                "Speed": "Song Speed (%)",
+                "SpeedPlaceholder": "100"
+            },
             "PlayAShow": {
                 "LongSong": "A Long Song",
                 "RandomSong": "A Random Song",
@@ -2214,6 +2225,10 @@
             "ShowPlayerNameWhenStartingSong": {
                 "Name": "Show Player Name When Starting Song",
                 "Description": "If enabled, the player name and instrument icon will appear when the song starts."
+            },
+            "ShowRemoteHighways": {
+                "Name": "Show Remote Highways",
+                "Description": "If disabled, your highway is centered as in singleplayer and other players' tracks are not displayed. Their scores, star power, and stem audio still sync."
             },
 			"StaticVocalsMode": {
 				"Name": "Static Vocals Mode",

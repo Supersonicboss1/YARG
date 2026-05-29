@@ -216,6 +216,7 @@ namespace YARG.Settings
                 nameof(Settings.CountdownDisplay),
                 nameof(Settings.UnisonDisplay),
                 nameof(Settings.ShowPlayerNameWhenStartingSong),
+                nameof(Settings.ShowRemoteHighways),
                 nameof(Settings.LyricDisplay),
                 nameof(Settings.KeepLyricBar),
                 nameof(Settings.SongTimeOnScoreBox),
