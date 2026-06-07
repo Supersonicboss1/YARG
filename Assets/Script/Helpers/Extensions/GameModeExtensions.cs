@@ -70,6 +70,7 @@ namespace YARG.Helpers.Extensions
                     (ProfileSettingStrings.LEFTY_FLIP, null),
                     (ProfileSettingStrings.DRUM_STAR_POWER_ACTIVATION_TYPE, null),
                     (ProfileSettingStrings.USE_CYMBAL_MODELS, "USE CYMBAL MODELS IN 5-LANE"),
+                    (ProfileSettingStrings.DRUM_DYNAMICS_VELOCITY_THRESHOLD, null),
                 },
                 GameMode.FourLaneDrums => new()
                 {
@@ -77,6 +78,7 @@ namespace YARG.Helpers.Extensions
                     (ProfileSettingStrings.CONFIGURE_PRO_DRUMS_HIGHWAY, null),
                     (ProfileSettingStrings.LEFTY_FLIP, null),
                     (ProfileSettingStrings.DRUM_STAR_POWER_ACTIVATION_TYPE, null),
+                    (ProfileSettingStrings.DRUM_DYNAMICS_VELOCITY_THRESHOLD, null),
                 },
                 GameMode.FiveLaneDrums => new()
                 {
@@ -84,6 +86,7 @@ namespace YARG.Helpers.Extensions
                     (ProfileSettingStrings.LEFTY_FLIP, null),
                     (ProfileSettingStrings.USE_CYMBAL_MODELS, "USE CYMBAL MODELS"),
                     (ProfileSettingStrings.DRUM_STAR_POWER_ACTIVATION_TYPE, null),
+                    (ProfileSettingStrings.DRUM_DYNAMICS_VELOCITY_THRESHOLD, null),
                 },
                 GameMode.SixFretGuitar => new()
                 {

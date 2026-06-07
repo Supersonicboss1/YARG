@@ -82,6 +82,8 @@ namespace YARG.Menu.ProfileList
         [SerializeField]
         private Toggle _useCymbalModelsToggle;
         [SerializeField]
+        private TMP_InputField _drumsVelocityThresholdField;
+        [SerializeField]
         private TMP_Dropdown _starPowerActivationTypeDropdown;
         [SerializeField]
         private TMP_Dropdown _engineDropdown;
@@ -251,7 +253,8 @@ namespace YARG.Menu.ProfileList
             _rangeDisabledToggle.isOn = profile.RangeEnabled;
             _openLaneDisplayTypeDropdown.value = _openLaneDisplayTypesByIndex.IndexOf(profile.OpenLaneDisplayType);
             _useCymbalModelsToggle.isOn = profile.UseCymbalModels;
-            
+            _drumsVelocityThresholdField.text = profile.DrumsVelocityThreshold.ToString();
+
             // Update preset dropdowns
             _engineDropdown.SetValueWithoutNotify(
                 _enginePresetsByIndex.IndexOf(profile.EnginePreset));
@@ -436,6 +439,17 @@ namespace YARG.Menu.ProfileList
         public void ChangeUseCymbalModels()
         {
             _profile.UseCymbalModels = _useCymbalModelsToggle.isOn;
+        }
+
+        public void ChangeDrumsVelocityThreshold()
+        {
+            if (int.TryParse(_drumsVelocityThresholdField.text, out var speed))
+            {
+                _profile.DrumsVelocityThreshold = Math.Clamp(speed, 0, 128);
+            }
+
+            // Always format it after
+            _drumsVelocityThresholdField.text = _profile.DrumsVelocityThreshold.ToString();
         }
 
         public void ChangeEngine()

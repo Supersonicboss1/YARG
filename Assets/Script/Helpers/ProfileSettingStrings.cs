@@ -28,5 +28,6 @@ namespace YARG.Assets.Script.Helpers
         public const string CONFIGURE_FIVE_LANE_DRUMS_HIGHWAY       = "Configure 5-Lane Drums Highway";
         public const string USE_CYMBAL_MODELS                       = "Use Cymbal Models";
         public const string DRUM_STAR_POWER_ACTIVATION_TYPE         = "Star Power Activation Type";
+        public const string DRUM_DYNAMICS_VELOCITY_THRESHOLD        = "Dynamics Velocity Threshold";
     }
 }
