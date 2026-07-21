@@ -547,6 +547,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9c3ed2ef465f43efac61ee559c9312cf, type: 3}
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::YARG.Gameplay.Visuals.StrikelineAnimator
+--- !u!114 &821139953428568384 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7803421139792583872, guid: 5800c42510b55c549be95ec3ecd75e1c, type: 3}
+  m_PrefabInstance: {fileID: 7434902305530561920}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ab828a579e4e4ad3b5f3f2ba1157955d, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::YARG.Gameplay.Visuals.TextInfoDisplay
 --- !u!114 &1442216845985701587 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 8299532499037330259, guid: 5800c42510b55c549be95ec3ecd75e1c, type: 3}
@@ -698,6 +709,7 @@ MonoBehaviour:
   SunburstEffects: {fileID: 1442216845985701587}
   IndicatorStripes: {fileID: 7617442645122152992}
   HitWindowDisplay: {fileID: 7275388750557486603}
+  InfoDisplay: {fileID: 821139953428568384}
   _hudLocation: {fileID: 3807369616701639989}
   NotePool: {fileID: 5534384060604769120}
   LanePool: {fileID: 1496502641604245702}

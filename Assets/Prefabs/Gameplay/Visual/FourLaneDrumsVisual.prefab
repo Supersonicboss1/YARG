@@ -145,6 +145,17 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 7610118164488372073, guid: 5800c42510b55c549be95ec3ecd75e1c, type: 3}
   m_PrefabInstance: {fileID: 7598390404892836460}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &376532146829106860 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7803421139792583872, guid: 5800c42510b55c549be95ec3ecd75e1c, type: 3}
+  m_PrefabInstance: {fileID: 7598390404892836460}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ab828a579e4e4ad3b5f3f2ba1157955d, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::YARG.Gameplay.Visuals.TextInfoDisplay
 --- !u!114 &897369785276829973 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 7279785948408697721, guid: 5800c42510b55c549be95ec3ecd75e1c, type: 3}
@@ -324,6 +335,7 @@ MonoBehaviour:
   SunburstEffects: {fileID: 1900302462358772031}
   IndicatorStripes: {fileID: 7487907470461173196}
   HitWindowDisplay: {fileID: 7686426392671820263}
+  InfoDisplay: {fileID: 376532146829106860}
   _hudLocation: {fileID: 4218340060847917785}
   NotePool: {fileID: 4797150999688012940}
   LanePool: {fileID: 1916376924205039402}

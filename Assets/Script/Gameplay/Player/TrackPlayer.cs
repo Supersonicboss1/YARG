@@ -56,6 +56,8 @@ namespace YARG.Gameplay.Player
         protected IndicatorStripes IndicatorStripes;
         [SerializeField]
         protected HitWindowDisplay HitWindowDisplay;
+        [SerializeField]
+        protected BaseInfoDisplay InfoDisplay;
 
         [SerializeField]
         private Transform _hudLocation;
@@ -260,6 +262,7 @@ namespace YARG.Gameplay.Player
             InitializeTrackEffects();
             InitializeCodaEvents();
             InitializeUnisonEvents();
+            InfoDisplay.Initialize(Engine);
 
             ResetNoteCounters();
 
@@ -464,7 +467,7 @@ namespace YARG.Gameplay.Player
             SunburstEffects.SetSunburstEffects(groove, stats.IsStarPowerActive, _currentMultiplier);
 
             TrackView.UpdateNoteStreak(stats.Combo);
-
+            InfoDisplay.SetCombo(Engine.BaseStats.Combo);
 
             // Could be if (!_isHotStartChecked && groove), but that would make it so hot start doesn't show
             // for bass until 6x.
