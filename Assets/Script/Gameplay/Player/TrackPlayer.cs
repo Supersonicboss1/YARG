@@ -370,7 +370,7 @@ namespace YARG.Gameplay.Player
             Chart = chart;
 
             OriginalNoteTrack = GetNotes(chart);
-            player.Profile.ApplyModifiers(OriginalNoteTrack, chart.SyncTrack);
+            player.Profile.ApplyModifiers(GameManager.Song.Hash, OriginalNoteTrack, chart.SyncTrack);
 
             NoteTrack = OriginalNoteTrack;
             Notes = NoteTrack.Notes;
