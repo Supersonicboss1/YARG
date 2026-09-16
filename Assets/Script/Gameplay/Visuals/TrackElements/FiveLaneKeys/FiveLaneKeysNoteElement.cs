@@ -1,12 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing.Text;
 using UnityEngine;
 using YARG.Assets.Script.Gameplay.Player;
 using YARG.Core.Chart;
-using YARG.Core.Engine;
 using YARG.Core.Engine.Keys;
-using YARG.Gameplay.Player;
+using YARG.Core.Engine.Keys.Engines;
 using YARG.Helpers.Extensions;
 using YARG.Themes;
 
@@ -80,7 +78,7 @@ namespace YARG.Gameplay.Visuals
 
                 _sustainLine = _normalSustainLine;
             }
-            else if (NoteRef.FiveLaneKeysAction is FiveLaneKeysEngine.FiveLaneKeysAction.OpenNote)
+            else if (NoteRef.FiveLaneKeysAction is YargFiveLaneKeysEngine.FiveLaneKeysAction.OpenNote)
             {
                 // Deal with open notes
 

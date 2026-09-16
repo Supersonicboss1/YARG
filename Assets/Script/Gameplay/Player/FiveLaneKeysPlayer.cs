@@ -21,11 +21,11 @@ using YARG.Helpers.Extensions;
 using YARG.Playback;
 using YARG.Player;
 using YARG.Themes;
-using static YARG.Core.Engine.Keys.FiveLaneKeysEngine;
+using static YARG.Core.Engine.Keys.Engines.YargFiveLaneKeysEngine;
 
 namespace YARG.Assets.Script.Gameplay.Player
 {
-    public sealed class FiveLaneKeysPlayer : TrackPlayer<FiveLaneKeysEngine, GuitarNote>
+    public sealed class FiveLaneKeysPlayer : TrackPlayer<NonProKeysEngine, GuitarNote>
     {
         private const double SUSTAIN_END_MUTE_THRESHOLD = 0.1;
 
@@ -136,7 +136,7 @@ namespace YARG.Assets.Script.Gameplay.Player
             return track.GetDifficulty(Player.Profile.CurrentDifficulty);
         }
 
-        protected override FiveLaneKeysEngine CreateEngine()
+        protected override NonProKeysEngine CreateEngine()
         {
             // If on bass, replace the star multiplier threshold
             bool isBass = Player.Profile.CurrentInstrument == Instrument.FiveFretBass;
@@ -382,12 +382,12 @@ namespace YARG.Assets.Script.Gameplay.Player
         {
             for (var action = FiveLaneKeysAction.GreenKey; action <= FiveLaneKeysAction.OrangeKey; action++)
             {
-                _fretArray.SetPressed((int)GetFretIndex(action), Engine.IsKeyHeld(action));
+                _fretArray.SetPressed((int)GetFretIndex(action), Engine.IsKeyHeld((int)action));
             }
 
             if (UsingOpenLane)
             {
-                _fretArray.SetPressed((int)GetFretIndex(FiveLaneKeysAction.OpenNote), Engine.IsKeyHeld(FiveLaneKeysAction.OpenNote));
+                _fretArray.SetPressed((int)GetFretIndex(FiveLaneKeysAction.OpenNote), Engine.IsKeyHeld((int)FiveLaneKeysAction.OpenNote));
             }
         }
 
