@@ -538,7 +538,7 @@ namespace YARG.Gameplay.Player
 
         private void UpdateSingNeedle()
         {
-            const float NEEDLE_POS_LERP = 30f;
+            float needlePosLerp = (float) EngineParams.ApproximateVocalFps;
             const float NEEDLE_POS_SNAP_MULTIPLIER = 10f;
 
             const float NEEDLE_ROT_LERP = 25f;
@@ -560,7 +560,7 @@ namespace YARG.Gameplay.Player
             }
             else
             {
-                float lerpRate = NEEDLE_POS_LERP;
+                float lerpRate = needlePosLerp;
 
                 // Show needle
                 if (!_needleVisualContainer.activeSelf)
