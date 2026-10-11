@@ -868,7 +868,7 @@ MonoBehaviour:
   _starPowerFill: {fileID: 2645155200500214333}
   _starPowerPulse: {fileID: 1624612988817992822}
   _soloBox: {fileID: 3799508755635261139}
-  _outerContainer: {fileID: 0}
+  _outerContainer: {fileID: 6391537258273281373}
   _multiplierText: {fileID: 7522242773574872378}
   _multiplierTextContainer: {fileID: 3579856538260068866}
   _textNotifications: {fileID: 5535873616660613850}
