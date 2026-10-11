@@ -46,7 +46,7 @@ namespace YARG.Gameplay.HUD
         private int _displayedNotesHit = int.MinValue;
         private int _displayedNoteCount = int.MinValue;
 
-        private int HitPercent => Mathf.FloorToInt((float) _solo.NotesHit / _solo.NoteCount * 100f);
+        private int HitPercent => _solo is null ? 0 : Mathf.FloorToInt((float) _solo.NotesHit / _solo.NoteCount * 100f);
 
         private Coroutine _currentCoroutine;
 

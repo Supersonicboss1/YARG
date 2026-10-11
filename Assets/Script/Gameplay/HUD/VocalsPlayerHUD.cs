@@ -3,6 +3,7 @@ using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using YARG.Core.Engine;
 using YARG.Core.Game;
 using YARG.Helpers.Extensions;
 using YARG.Helpers.UI;
@@ -21,6 +22,10 @@ namespace YARG.Gameplay.HUD
         private Image _starPowerFill;
         [SerializeField]
         private Image _starPowerPulse;
+        [SerializeField]
+        private SoloBox _soloBox;
+        [SerializeField]
+        private GameObject _outerContainer; // Everything except the solo box
 
         [Space]
         [SerializeField]
@@ -127,6 +132,16 @@ namespace YARG.Gameplay.HUD
             }
         }
 
+        public void StartSolo(SoloSection solo)
+        {
+            _soloBox.StartSolo(solo);
+        }
+
+        public void EndSolo(int soloBonus)
+        {
+            _soloBox.EndSolo(soloBonus, null);
+        }
+
         public void UpdateInfo(float phrasePercent, int multiplier,
             float starPowerPercent, bool isStarPowerActive)
         {
@@ -195,13 +210,13 @@ namespace YARG.Gameplay.HUD
         {
             if (show)
             {
-                yield return transform
+                yield return _outerContainer.transform
                     .DORotate(new Vector3(0f, 0f, 0f), 0.25f)
                     .WaitForCompletion();
             }
             else
             {
-                yield return transform
+                yield return _outerContainer.transform
                     .DORotate(new Vector3(90f, 0f, 0f), 0.25f)
                     .WaitForCompletion();
             }

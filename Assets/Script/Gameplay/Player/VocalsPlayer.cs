@@ -329,6 +329,9 @@ namespace YARG.Gameplay.Player
                 };
             }
 
+            engine.OnSoloStart += OnPercussionPhraseStart;
+            engine.OnSoloEnd += OnPercussionPhraseEnd;
+
             return engine;
         }
 
@@ -336,6 +339,16 @@ namespace YARG.Gameplay.Player
         {
             _lastTargetNote = null;
             _hud.SetFullCombo(IsFc);
+        }
+
+        private void OnPercussionPhraseStart(SoloSection percPhrase)
+        {
+            _hud.StartSolo(percPhrase);
+        }
+
+        private void OnPercussionPhraseEnd(SoloSection percPhrase)
+        {
+            _hud.EndSolo(percPhrase.SoloBonus);
         }
 
         public override void ResetPracticeSection()
