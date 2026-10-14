@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Cysharp.Threading.Tasks;
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using YARG.Core.Audio;
@@ -170,6 +171,8 @@ namespace YARG.Gameplay
         public ReplayInfo ReplayInfo { get; private set; }
         public ReplayData ReplayData { get; private set; }
 
+        public bool ReplaySaveInhibited { get; set; }
+
         public List<PauseInfo> PauseInfo { get; } = new List<PauseInfo>();
 
         public IReadOnlyList<BasePlayer> Players => _players;
@@ -257,6 +260,8 @@ namespace YARG.Gameplay
             _metronomeScheduler?.Dispose();
             _crowdClapScheduler?.Dispose();
             _songRunner?.Dispose();
+
+            _volumeTween?.Kill();
 
             // Restore stem volumes to their original state while the mixer is still valid.
             foreach (var (stem, state) in _stemStates)
@@ -422,12 +427,12 @@ namespace YARG.Gameplay
             PauseCore(showMenu);
         }
 
-        private void PauseCore(bool showMenu)
+        private void PauseCore(bool showMenu, bool overridePause = false)
         {
-            CloseAllPlayerMenus();
-
             if (showMenu)
             {
+                CloseAllPlayerMenus();
+
                 if (!GlobalVariables.State.PlayingWithReplay && ReplayInfo != null)
                 {
                     _pauseMenu.PushMenu(PauseMenuManager.Menu.ReplayPause);
@@ -457,7 +462,7 @@ namespace YARG.Gameplay
 
             // This uses the raw input update time because it keeps running during the pause
             // allowing us to accurately calculate the length of the pause later
-            if (!Rewinding && !IsReplay && showMenu)
+            if (!Rewinding && !IsReplay && !overridePause)
             {
                 // Save state about the pause
                 _pauseTime = InputManager.InputUpdateTime;
@@ -491,6 +496,7 @@ namespace YARG.Gameplay
             {
                 _pauseMenu.PopAllMenus();
                 _songRunner.Resume();
+                CloseAllPlayerMenus();
                 ResumeCore();
                 return;
             }
@@ -523,6 +529,7 @@ namespace YARG.Gameplay
             try
             {
                 _pauseMenu.PopAllMenus();
+                CloseAllPlayerMenus();
                 Time.timeScale = 1f;
 
                 // Update the last PauseInfo with the pause length
@@ -612,7 +619,7 @@ namespace YARG.Gameplay
         public void OverridePause()
         {
             _songRunner.OverridePause();
-            PauseCore(showMenu: false);
+            PauseCore(showMenu: false, overridePause: true);
         }
 
         public bool OverrideResume()
@@ -852,7 +859,7 @@ namespace YARG.Gameplay
         public ReplayInfo? SaveReplay(double length, string directory)
 #nullable disable
         {
-            if (_isReplaySaved)
+            if (_isReplaySaved || ReplaySaveInhibited)
             {
                 return null;
             }
@@ -1132,6 +1139,16 @@ namespace YARG.Gameplay
         public void ResetCoda()
         {
             _breBox.ForceReset();
+        }
+
+        public void DifficultyChanged(BasePlayer player)
+        {
+            EngineManager.StarScoreThresholds = EngineManager.GetStarScoreCutoffs(_players.ConvertAll(p => p.BaseEngine.StarScoreThresholds));
+            EngineManager.ResetStars();
+            if (_unisonDisplay.enabled)
+            {
+                _unisonDisplay.OnDifficultyChanged(player.EngineContainer.EngineId);
+            }
         }
     }
 }

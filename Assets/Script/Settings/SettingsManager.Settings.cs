@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -37,6 +38,33 @@ namespace YARG.Settings
     {
         RangeLabels,
         LegacyLabels,
+    }
+
+    public enum NavigationJumpDistance
+    {
+        Sections,
+        Pages,
+    }
+
+    public enum SecondaryAlbumSortMode
+    {
+        AlbumsByTitleSongsByTitle,
+        AlbumsByTitleSongsByTrack,
+        AlbumsByYearSongsByTitle,
+        AlbumsByYearSongsByTrack,
+        Off,
+    }
+
+    public enum SecondarySourceSortMode
+    {
+        Off,
+        Intensity,
+    }
+
+    public enum SecondaryIntensitySortMode
+    {
+        Off,
+        Source,
     }
 
     public enum ShowMeanSongOffsetCalibrationMode
@@ -76,6 +104,18 @@ namespace YARG.Settings
     }
 
     public enum ReverbMode
+    {
+        Performance = 0,
+        Quality = 1
+    }
+
+    public enum TempoEngine
+    {
+        BassFx = 0,
+        YargStretch = 1
+    }
+
+    public enum EffectsMode
     {
         Performance = 0,
         Quality = 1
@@ -140,6 +180,10 @@ namespace YARG.Settings
             public SortAttribute PreviousLibrarySort = SortAttribute.Name;
 
             public Dictionary<string, HUDPositionProfile> HUDPositionProfiles = new();
+
+            // Filter selections are stored separately from the toggle setting because their
+            // available values are generated from the user's song library at runtime.
+            public Dictionary<string, Dictionary<string, bool>> RememberedFilters = new();
 
             private static MetronomeSample? _previousMetronomeSound;
 
@@ -234,6 +278,7 @@ namespace YARG.Settings
 
             public ToggleSetting PauseOnDeviceDisconnect { get; } = new(true);
             public ToggleSetting PauseOnFocusLoss { get; } = new(true);
+            public ToggleSetting PauseOnMenuOpen { get; } = new(true);
             public ToggleSetting MuteOnFocusLoss { get; } = new(false);
 
             public ToggleSetting WrapAroundNavigation { get; } = new(true);
@@ -254,6 +299,11 @@ namespace YARG.Settings
 
             private static void RefreshSongs()
             {
+                if (!IsInitialized)
+                {
+                    return;
+                }
+
                 SongContainer.RequestContainerRefresh();
                 MusicLibraryMenu.SetReload(MusicLibraryReloadState.Full);
                 HistoryMenu.ForceUpdate = true;
@@ -273,10 +323,47 @@ namespace YARG.Settings
             // this setting could change the available songs, so we need to refresh the song list
             public ToggleSetting CensorMatureContent { get; } = new(false, _ => RefreshSongs());
 
+            public ToggleSetting RememberFilters { get; } = new(false);
+
             public ToggleSetting AllowDuplicateSongs { get; } = new(true, _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial));
             public ToggleSetting UseFullDirectoryForPlaylists { get; } = new(false);
 
             public ToggleSetting ShowFavoriteButton { get; } = new(true);
+
+            public DropdownSetting<NavigationJumpDistance> NavigationJumpDistance { get; }
+                = new(YARG.Settings.NavigationJumpDistance.Sections)
+                {
+                    YARG.Settings.NavigationJumpDistance.Sections,
+                    YARG.Settings.NavigationJumpDistance.Pages,
+                };
+
+            public DropdownSetting<SecondaryAlbumSortMode> SecondaryAlbumSort { get; }
+                = new(SecondaryAlbumSortMode.AlbumsByTitleSongsByTitle,
+                    _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial))
+                {
+                    SecondaryAlbumSortMode.AlbumsByTitleSongsByTitle,
+                    SecondaryAlbumSortMode.AlbumsByTitleSongsByTrack,
+                    SecondaryAlbumSortMode.AlbumsByYearSongsByTitle,
+                    SecondaryAlbumSortMode.AlbumsByYearSongsByTrack,
+                    SecondaryAlbumSortMode.Off,
+                };
+
+            public DropdownSetting<SecondarySourceSortMode> SecondarySourceSort { get; }
+                = new(SecondarySourceSortMode.Off,
+                    _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial))
+                {
+                    SecondarySourceSortMode.Off,
+                    SecondarySourceSortMode.Intensity,
+                };
+
+            public DropdownSetting<SecondaryIntensitySortMode> SecondaryIntensitySort { get; }
+                = new(SecondaryIntensitySortMode.Off,
+                    _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial))
+                {
+                    SecondaryIntensitySortMode.Off,
+                    SecondaryIntensitySortMode.Source,
+                };
+
             public ToggleSetting ShowRecommendedSongs { get; } = new(true, ShowRecommendedSongsCallback);
             public ToggleSetting OnlyShowPlayableSongs { get; } = new(false, RefreshLibraryFilterCallback);
 
@@ -401,6 +488,7 @@ namespace YARG.Settings
             {
                 AutomaticPlaybackBuffer = new(true, AutomaticPlaybackBufferChanged);
                 PlaybackBufferLength.EditableWhen = () => !AutomaticPlaybackBuffer.Value;
+                MuteOnlyWhenAllPlayersMiss.EditableWhen = () => MuteOnMiss.Value != AudioFxMode.Off;
             }
 
             public SliderSetting MicrophoneSensitivity { get; } = new(2f, -50f, 50f);
@@ -411,6 +499,8 @@ namespace YARG.Settings
                 AudioFxMode.MultitrackOnly,
                 AudioFxMode.On
             };
+
+            public ToggleSetting MuteOnlyWhenAllPlayersMiss { get; } = new(false);
 
             public DropdownSetting<AudioFxMode> UseStarpowerFx { get; } = new(AudioFxMode.On)
             {
@@ -635,7 +725,7 @@ namespace YARG.Settings
                 FileExplorerHelper.OpenFolder(PathHelper.ExecutablePath);
             }
 
-            public async void RemoveRemoteContent()
+            public void RemoveRemoteContent()
             {
                 // Pop confirmation dialog
                 DialogManager.Instance.ShowConfirmDeleteDialog("Are you sure you want to remove all cached content?\n\nRemote content you access will be redownloaded, possibly causing loading delays.",
@@ -760,12 +850,15 @@ namespace YARG.Settings
                 BandComboType.Lenient,
                 BandComboType.Strict
             };
-            public DropdownSetting<ReverbMode> ReverbImplementation { get; } = new(ReverbMode.Performance,
-                ReverbImplementationCallback)
-            {
-                ReverbMode.Performance,
-                ReverbMode.Quality
-            };
+            public EffectsModeSetting EffectsMode { get; } = new(mode => EffectsModeCallback(mode).Forget());
+
+            public ReverbMode CurrentReverbMode => EffectsMode.Value == YARG.Settings.EffectsMode.Quality
+                ? ReverbMode.Quality
+                : ReverbMode.Performance;
+
+            public TempoEngine CurrentTempoEngine => EffectsMode.Value == YARG.Settings.EffectsMode.Quality
+                ? TempoEngine.YargStretch
+                : TempoEngine.BassFx;
             public ToggleSetting SaveScoresWithBots { get; } = new(false);
             public SliderSetting FontScaling { get; } = new(0f, 0f, 100f, FontScalingCallback);
 
@@ -1075,9 +1168,19 @@ namespace YARG.Settings
                 }
             }
 
-            private static void ReverbImplementationCallback(ReverbMode mode)
+            private static async UniTaskVoid EffectsModeCallback(EffectsMode mode)
             {
                 if (!IsInitialized)
+                {
+                    return;
+                }
+
+                // This toggle will reinitialize audio which blocks the ui briefly, so flip the toggle first then execute
+                await UniTask.WaitForEndOfFrame();
+                await UniTask.NextFrame();
+
+                // Abort if the setting was changed again while yielding
+                if (mode != Settings.EffectsMode.Value)
                 {
                     return;
                 }
@@ -1087,8 +1190,8 @@ namespace YARG.Settings
                 {
                     if (!GlobalAudioHandler.ReinitializeOutput())
                     {
-                        YargLogger.LogError("Failed to reinitialize audio output after reverb implementation change");
-                        ToastManager.ToastError("Failed to reinitialize audio output after reverb change.");
+                        YargLogger.LogError("Failed to reinitialize audio output after effects mode change");
+                        ToastManager.ToastError("Failed to reinitialize audio output after effects mode change.");
                     }
                 }
                 finally
@@ -1332,7 +1435,7 @@ namespace YARG.Settings
             private static void CustomCharacterCallback(string file)
             {
                 // CharacterPreviewBuilder.CharacterFile = file;
-                _ = CharacterPreviewBuilder.ChangeCharacter(file);
+                CharacterPreviewBuilder.ChangeCharacter(file);
             }
             #endregion
         }

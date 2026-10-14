@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -192,22 +192,27 @@ namespace YARG.Gameplay
 
             _backgroundDimmer.color = colorDim;
 
-            // If we have a venue hint for the song and we can load the hinted yarground, prefer that
-            var hint = GameManager.Song.VenueHint;
-            if (!string.IsNullOrWhiteSpace(hint))
+            // Prefer the career tier's venue hint, then fall back to the song's hint.
+            var hints = new[]
             {
-                if (await AddressableVenueExists(hint))
+                GlobalVariables.State.CurrentCareer?.VenueHint,
+                GameManager.Song.VenueHint,
+            };
+            foreach (var hint in hints.Distinct())
+            {
+                if (string.IsNullOrWhiteSpace(hint) || !await AddressableVenueExists(hint))
                 {
-                    var loaded = await LoadAddressableYarground(hint, vocalGender);
-                    if (loaded)
-                    {
-                        GameManager.CrowdEventHandler.Start();
-                        return;
-                    }
+                    continue;
+                }
+
+                if (await LoadAddressableYarground(hint, vocalGender))
+                {
+                    GameManager.CrowdEventHandler.Start();
+                    return;
                 }
             }
 
-            // Hint didn't resolve or failed to load, so pretend it didn't exist
+            // No hint resolved or loaded, so use the default venue
 
             _type = result.Type;
 
@@ -581,8 +586,6 @@ namespace YARG.Gameplay
             const double endTimeThreshold = 0;
             const double dontLoopThreshold = 0.85;
 
-            player.Stop();
-
             if (_source == VenueSource.Song && !GameManager.Song.VideoLoop)
             {
                 _videoStartTime = GameManager.Song.VideoStartTimeSeconds;
@@ -819,7 +822,7 @@ namespace YARG.Gameplay
             return filteredLocations;
         }
 
-        private async UniTask<GameObject> GetCustomCharacterFromBundle(string characterPath)
+        private GameObject GetCustomCharacterFromBundle(string characterPath)
         {
             // string characterPath = SettingsManager.Settings.CustomVocalsCharacter.Value;
 
@@ -862,7 +865,7 @@ namespace YARG.Gameplay
 
                 if (characterInfo.Source == CustomCharacterSource.File)
                 {
-                    return await GetCustomCharacterFromBundle(characterInfo.Identifier);
+                    return GetCustomCharacterFromBundle(characterInfo.Identifier);
                 }
 
                 if (characterInfo.Source == CustomCharacterSource.Addressable)
@@ -876,6 +879,11 @@ namespace YARG.Gameplay
 
         private async UniTask<bool> LoadCharacter(GameObject venueRoot, string hint, VocalGender gender)
         {
+            if (!HasCharacter(venueRoot, VenueCharacter.CharacterType.Vocals))
+            {
+                return false;
+            }
+
             var character = await GetAddressableCharacter(hint);
 
             // Hint failed, try user's custom character
@@ -890,11 +898,25 @@ namespace YARG.Gameplay
                 character = await GetAddressableCharacter(gender);
             }
 
-            var usingCustomChar = await LoadCharacter(venueRoot, character);
+            var usingCustomChar = LoadCharacter(venueRoot, character);
             return usingCustomChar;
         }
 
-        private async UniTask<bool> LoadCharacter(GameObject venueRoot, GameObject character)
+        private static bool HasCharacter(GameObject venueRoot, VenueCharacter.CharacterType type)
+        {
+            var characters = venueRoot.GetComponentsInChildren<VenueCharacter>();
+            foreach (var character in characters)
+            {
+                if (character.Type == type)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool LoadCharacter(GameObject venueRoot, GameObject character)
         {
             if (character == null)
             {
@@ -921,7 +943,7 @@ namespace YARG.Gameplay
 
             if (existingCharacter == null)
             {
-                YargLogger.LogFormatError("Failed to find character of type {0} in venue root", venueCharacter.Type);
+                YargLogger.LogFormatDebug("Failed to find character of type {0} in venue root", venueCharacter.Type);
                 return false;
             }
 
@@ -935,7 +957,7 @@ namespace YARG.Gameplay
 
             if (venueCharacter is VRMCharacter vrmCharacter)
             {
-                _ = CopyLipsyncToNewCharacter(venueRoot, vrmCharacter);
+                CopyLipsyncToNewCharacter(venueRoot, vrmCharacter);
             }
 
             AddMicrophoneToCharacter(newCharacter);
@@ -947,7 +969,7 @@ namespace YARG.Gameplay
             return true;
         }
 
-        private static async UniTask CopyLipsyncToNewCharacter(GameObject venueRoot, VRMCharacter character)
+        private static void CopyLipsyncToNewCharacter(GameObject venueRoot, VRMCharacter character)
         {
             // Find CharacterManager
             var characterManager = venueRoot.GetComponentInChildren<CharacterManager>();
@@ -1085,14 +1107,31 @@ namespace YARG.Gameplay
                 return false;
             }
 
-            var genre = Genrelizer.GetBaseGenre(GameManager.Song.Genre);
+            var animationGenres = new List<Genrelizer.BaseGenre>();
 
-            if (!anims.ContainsKey(genre))
+            if (GameManager.Chart.AnimationGenre is not MiloAnimation.MiloAnimationGenre.None)
+            {
+                animationGenres.AddRange(Genrelizer.GetAnimationGenres(GameManager.Chart.AnimationGenre));
+            }
+            // Add the song's actual base genre at the end of the list, if we can't find any from the animation genre
+            animationGenres.Add(Genrelizer.GetBaseGenre(GameManager.Song.Genre));
+
+            Genrelizer.BaseGenre? genre = null;
+            foreach (var animationGenre in animationGenres)
+            {
+                if (anims.ContainsKey(animationGenre))
+                {
+                    genre = animationGenre;
+                    break;
+                }
+            }
+
+            if (genre is null)
             {
                 return false;
             }
 
-            var controller = anims[genre];
+            var controller = anims[genre.Value];
             animator.runtimeAnimatorController = controller;
             animator.Rebind();
             return true;
