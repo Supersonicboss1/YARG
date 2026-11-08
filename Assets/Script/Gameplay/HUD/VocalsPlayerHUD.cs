@@ -108,7 +108,7 @@ namespace YARG.Gameplay.HUD
             else
             {
                 _comboMeterFill.fillAmount = Mathf.Lerp(_comboMeterFill.fillAmount,
-                    _comboMeterFillTarget, Time.deltaTime * 12f);
+                    _comboMeterFillTarget, Time.deltaTime * 50f);
             }
 
             // Update pulse
