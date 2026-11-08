@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -39,6 +40,18 @@ namespace YARG.Settings
         LegacyLabels,
     }
 
+    public enum NavigationJumpDistance
+    {
+        Sections,
+        Pages,
+    }
+
+    public enum DateAddedSortMode
+    {
+        ChartFileDate,
+        ReleaseDate,
+    }
+
     public enum SecondaryAlbumSortMode
     {
         AlbumsByTitleSongsByTitle,
@@ -46,6 +59,18 @@ namespace YARG.Settings
         AlbumsByYearSongsByTitle,
         AlbumsByYearSongsByTrack,
         Off,
+    }
+
+    public enum SecondarySourceSortMode
+    {
+        Off,
+        Intensity,
+    }
+
+    public enum SecondaryIntensitySortMode
+    {
+        Off,
+        Source,
     }
 
     public enum ShowMeanSongOffsetCalibrationMode
@@ -300,16 +325,37 @@ namespace YARG.Settings
                 SongRating.None,
             };
 
+            public DropdownSetting<SongRating> UnratedSongRating { get; }
+                = new(SongRating.None, _ => RefreshSongs())
+            {
+                SongRating.Family_Friendly,
+                SongRating.Supervision_Recommended,
+                SongRating.Mature,
+                SongRating.Sensitive_Content,
+                SongRating.None,
+            };
+
             // If MaxSongRating is set to anything other than Family_Friendly,
             // this setting could change the available songs, so we need to refresh the song list
             public ToggleSetting CensorMatureContent { get; } = new(false, _ => RefreshSongs());
 
             public ToggleSetting RememberFilters { get; } = new(false);
 
+            public SliderSetting NumberOfRecommendations { get; } = new(10, 0, 100,
+                _ => ShowRecommendedSongsCallback(true), wholeNumbers: true, clampMax: false,
+                inputMax: () => Mathf.Max(0, SongContainer.Count - 1));
+
             public ToggleSetting AllowDuplicateSongs { get; } = new(true, _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial));
             public ToggleSetting UseFullDirectoryForPlaylists { get; } = new(false);
 
             public ToggleSetting ShowFavoriteButton { get; } = new(true);
+
+            public DropdownSetting<NavigationJumpDistance> NavigationJumpDistance { get; }
+                = new(YARG.Settings.NavigationJumpDistance.Sections)
+                {
+                    YARG.Settings.NavigationJumpDistance.Sections,
+                    YARG.Settings.NavigationJumpDistance.Pages,
+                };
 
             public DropdownSetting<SecondaryAlbumSortMode> SecondaryAlbumSort { get; }
                 = new(SecondaryAlbumSortMode.AlbumsByTitleSongsByTitle,
@@ -322,6 +368,22 @@ namespace YARG.Settings
                     SecondaryAlbumSortMode.Off,
                 };
 
+            public DropdownSetting<SecondarySourceSortMode> SecondarySourceSort { get; }
+                = new(SecondarySourceSortMode.Off,
+                    _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial))
+                {
+                    SecondarySourceSortMode.Off,
+                    SecondarySourceSortMode.Intensity,
+                };
+
+            public DropdownSetting<SecondaryIntensitySortMode> SecondaryIntensitySort { get; }
+                = new(SecondaryIntensitySortMode.Off,
+                    _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial))
+                {
+                    SecondaryIntensitySortMode.Off,
+                    SecondaryIntensitySortMode.Source,
+                };
+
             public ToggleSetting ShowRecommendedSongs { get; } = new(true, ShowRecommendedSongsCallback);
             public ToggleSetting OnlyShowPlayableSongs { get; } = new(false, RefreshLibraryFilterCallback);
 
@@ -330,6 +392,13 @@ namespace YARG.Settings
                 {
                     SongLengthLabelMode.RangeLabels,
                     SongLengthLabelMode.LegacyLabels,
+                };
+
+            public DropdownSetting<DateAddedSortMode> DateAddedSort { get; }
+                = new(DateAddedSortMode.ChartFileDate, _ => RefreshSongs())
+                {
+                    DateAddedSortMode.ChartFileDate,
+                    DateAddedSortMode.ReleaseDate,
                 };
 
             public ToggleSetting EnablePlayAShow { get; } = new(true);
@@ -808,12 +877,7 @@ namespace YARG.Settings
                 BandComboType.Lenient,
                 BandComboType.Strict
             };
-            public DropdownSetting<EffectsMode> EffectsMode { get; } = new(YARG.Settings.EffectsMode.Performance,
-                EffectsModeCallback)
-            {
-                YARG.Settings.EffectsMode.Performance,
-                YARG.Settings.EffectsMode.Quality
-            };
+            public EffectsModeSetting EffectsMode { get; } = new(mode => EffectsModeCallback(mode).Forget());
 
             public ReverbMode CurrentReverbMode => EffectsMode.Value == YARG.Settings.EffectsMode.Quality
                 ? ReverbMode.Quality
@@ -1131,9 +1195,19 @@ namespace YARG.Settings
                 }
             }
 
-            private static void EffectsModeCallback(EffectsMode mode)
+            private static async UniTaskVoid EffectsModeCallback(EffectsMode mode)
             {
                 if (!IsInitialized)
+                {
+                    return;
+                }
+
+                // This toggle will reinitialize audio which blocks the ui briefly, so flip the toggle first then execute
+                await UniTask.WaitForEndOfFrame();
+                await UniTask.NextFrame();
+
+                // Abort if the setting was changed again while yielding
+                if (mode != Settings.EffectsMode.Value)
                 {
                     return;
                 }
