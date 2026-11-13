@@ -488,7 +488,7 @@ namespace YARG.Menu.MusicLibrary
                             Localize.Percent(SongSpeedMenu.SongSpeedMultiplier))),
                     new NavigationScheme.Entry(MenuAction.Blue,  "Menu.MusicLibrary.Filters", OpenFilters),
                     new NavigationScheme.Entry(MenuAction.Orange, "Menu.MusicLibrary.MoreOptions",
-                        OnOrangeHit, OnOrangeRelease),
+                        () => _popupMenu.gameObject.SetActive(true)),
                 }, false));
                 return;
             }

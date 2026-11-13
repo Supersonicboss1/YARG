@@ -13,6 +13,7 @@ using YARG.Gameplay.HUD;
 using YARG.Gameplay.Player;
 using YARG.Localization;
 using YARG.Menu;
+using YARG.Menu.Navigation;
 using YARG.Menu.Persistent;
 using YARG.Menu.Settings;
 using YARG.Online;
@@ -272,7 +273,7 @@ namespace YARG.Gameplay
                 }
 
                 // Listen for menu inputs
-                Navigator.Instance.NavigationEvent += OnNavigationEvent;
+                // Navigator.Instance.NavigationEvent += OnNavigationEvent;
 
                 // Debug info
                 InitializeDebug();
