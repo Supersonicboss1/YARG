@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using UnityEngine;
@@ -623,6 +623,95 @@ namespace YARG.Venue.Characters
             End,
         }
 
+        //TODO: this whole thing sucks, we need to come up with a better way to define "what" an animation state is
+        public static bool IsDrumHandAnimation(AnimationStateType state)
+        {
+            return state is AnimationStateType.SnareLhHard
+                or AnimationStateType.SnareRhHard
+                or AnimationStateType.SnareLhSoft
+                or AnimationStateType.SnareRhSoft
+                or AnimationStateType.HihatLeftHand
+                or AnimationStateType.HihatRightHand
+                or AnimationStateType.PercussionRightHand
+                or AnimationStateType.Crash1LhHard
+                or AnimationStateType.Crash1LhSoft
+                or AnimationStateType.Crash1RhHard
+                or AnimationStateType.Crash1RhSoft
+                or AnimationStateType.Crash2LhHard
+                or AnimationStateType.Crash2LhSoft
+                or AnimationStateType.Crash2RhHard
+                or AnimationStateType.Crash2RhSoft
+                or AnimationStateType.Crash1Choke
+                or AnimationStateType.Crash2Choke
+                or AnimationStateType.RideLh
+                or AnimationStateType.RideRh
+                or AnimationStateType.Tom1LeftHand
+                or AnimationStateType.Tom1RightHand
+                or AnimationStateType.Tom2LeftHand
+                or AnimationStateType.Tom2RightHand
+                or AnimationStateType.FloorTomLeftHand
+                or AnimationStateType.FloorTomRightHand;
+        }
+
+        public static bool IsDrumLeftHandAnimation(AnimationStateType state)
+        {
+            return state is AnimationStateType.SnareLhHard
+                or AnimationStateType.SnareLhSoft
+                or AnimationStateType.HihatLeftHand
+                or AnimationStateType.Crash1LhHard
+                or AnimationStateType.Crash1LhSoft
+                or AnimationStateType.Crash2LhHard
+                or AnimationStateType.Crash2LhSoft
+                or AnimationStateType.Tom1LeftHand
+                or AnimationStateType.Tom2LeftHand
+                or AnimationStateType.FloorTomLeftHand
+                or AnimationStateType.RideLh;
+        }
+
+        public static bool IsDrumHandAnimation(AnimationType state)
+        {
+            return state is AnimationType.SnareLhHard
+                or AnimationType.SnareRhHard
+                or AnimationType.SnareLhSoft
+                or AnimationType.SnareRhSoft
+                or AnimationType.HihatLeftHand
+                or AnimationType.HihatRightHand
+                or AnimationType.PercussionRightHand
+                or AnimationType.Crash1LhHard
+                or AnimationType.Crash1LhSoft
+                or AnimationType.Crash1RhHard
+                or AnimationType.Crash1RhSoft
+                or AnimationType.Crash2LhHard
+                or AnimationType.Crash2LhSoft
+                or AnimationType.Crash2RhHard
+                or AnimationType.Crash2RhSoft
+                or AnimationType.Crash1Choke
+                or AnimationType.Crash2Choke
+                or AnimationType.RideLh
+                or AnimationType.RideRh
+                or AnimationType.Tom1LeftHand
+                or AnimationType.Tom1RightHand
+                or AnimationType.Tom2LeftHand
+                or AnimationType.Tom2RightHand
+                or AnimationType.FloorTomLeftHand
+                or AnimationType.FloorTomRightHand;
+        }
+
+        public static bool IsDrumLeftHandAnimation(AnimationType state)
+        {
+            return state is AnimationType.SnareLhHard
+                or AnimationType.SnareLhSoft
+                or AnimationType.HihatLeftHand
+                or AnimationType.Crash1LhHard
+                or AnimationType.Crash1LhSoft
+                or AnimationType.Crash2LhHard
+                or AnimationType.Crash2LhSoft
+                or AnimationType.Tom1LeftHand
+                or AnimationType.Tom2LeftHand
+                or AnimationType.FloorTomLeftHand
+                or AnimationType.RideLh;
+        }
+
         private AnimationStateType? GetAnimationStateForHandMap(HandMap.HandMapType handMap)
         {
             return handMap switch
@@ -697,7 +786,8 @@ namespace YARG.Venue.Characters
             SetTrigger(AnimationStateType.Playing);
         }
 
-        protected void SetTrigger(AnimationStateType state)
+        protected void SetTrigger(AnimationStateType state, float transitionDuration = 0.05f,
+            bool setAnimatorTrigger = true, bool restartAtStart = false)
         {
             if (_animationEvents.TryGet(state, out var list))
             {
@@ -726,7 +816,20 @@ namespace YARG.Venue.Characters
                     //
                     // Note that the trigger is *also* set, but since it happens on the same frame as this crossfade
                     // it should in theory take over if it is actually working, so this is in a way just a fallback
-                    _animator.CrossFadeInFixedTime(info.Hash, 0.05f);
+                    if (restartAtStart)
+                    {
+                        _animator.CrossFadeInFixedTime(info.Hash, transitionDuration, info.Layer, 0f);
+                    }
+                    else
+                    {
+                        _animator.CrossFadeInFixedTime(info.Hash, transitionDuration, info.Layer);
+                    }
+                }
+
+                // A drum hit can be crossfaded into early while it speed is held at zero, don't also fire the controller trigger
+                if (hasTrigger && !setAnimatorTrigger)
+                {
+                    return;
                 }
 
                 if (hasTrigger)
@@ -785,14 +888,22 @@ namespace YARG.Venue.Characters
                         CurrentHandPosition = state;
                     }
 
-                    ResetAllTriggers();
+                    // Drum hand animations have their own layer, this is fine and cool and good
+                    if (IsDrumHandAnimation(state))
+                    {
+                        _animator.ResetTrigger(hash);
+                    }
+                    else
+                    {
+                        ResetAllTriggers();
+                    }
 
                     _animator.SetTrigger(hash);
                 }
                 else if (_animationStateFallbacks.TryGetValue(state, out var fallback))
                 {
                     // ew, recursion (provably finite in the case that the fallbacks dict is finite, though)
-                    SetTrigger(fallback);
+                    SetTrigger(fallback, transitionDuration, setAnimatorTrigger, restartAtStart);
                 }
             }
             else
@@ -958,7 +1069,7 @@ namespace YARG.Venue.Characters
 
         private static bool IsLeftHandPositionState(AnimationStateType state)
         {
-            return state is >= AnimationStateType.LeftHandPosition1 and <= AnimationStateType.LeftHandPosition20;
+            return state is (>= AnimationStateType.LeftHandPosition1 and <= AnimationStateType.LeftHandPosition20);
         }
 
         // TODO: Extend this to more than just what happens to be needed for the test venue

@@ -30,6 +30,12 @@ namespace YARG.Venue.Characters
                 LastUsedHand = selectedHand;
                 LastHitTime = noteTime;
             }
+
+            public void Reset()
+            {
+                LastUsedHand = null;
+                LastHitTime = null;
+            }
         }
 
         private readonly IReadOnlyDictionary<FourLaneDrumPad, PadState> _handStateByPad
@@ -44,8 +50,15 @@ namespace YARG.Venue.Characters
                 { FourLaneDrumPad.RedDrum, new PadState(Hand.LEFT) },
             };
 
+        private readonly double?[] _lastHitTimeByHand = new double?[2];
         public List<AnimationEvent> GetDrumAnimations(List<DrumNote> drumNotes)
         {
+            foreach (var state in _handStateByPad.Values)
+            {
+                state.Reset();
+            }
+            Array.Clear(_lastHitTimeByHand, 0, _lastHitTimeByHand.Length);
+
             var drumAnimationEvents = new List<AnimationEvent>();
             foreach (var parent in drumNotes)
             {
@@ -64,44 +77,43 @@ namespace YARG.Venue.Characters
         private List<AnimationEvent.AnimationType> GetAnimationsForParentNote(DrumNote parentNote)
         {
             var animations = new List<AnimationEvent.AnimationType>();
-            var padHands = new List<(FourLaneDrumPad Pad, Hand Hand)>();
+            var padHands = new List<(DrumNote Note, FourLaneDrumPad Pad, Hand Hand)>();
 
-            //Map each pad to a hand
             foreach (var note in parentNote.AllNotes)
             {
                 var pad = (FourLaneDrumPad) note.Pad;
                 if (pad == FourLaneDrumPad.Kick)
                 {
                     // Kick doesn't need hand tracking, add animation directly
+                    // TODO: may need to consider this further if we ever want to support double-kick on the drummer
                     animations.Add(AnimationEvent.AnimationType.Kick);
                     continue;
                 }
                 var hand = GetHandForPad(pad, note.Time);
-                padHands.Add((pad, hand));
+                padHands.Add((note, pad, hand));
             }
 
-            // Resolve conflicting hands by switching one hand, preferring to keep blue unchanged
-            if (padHands.Count >= 2 && padHands[0].Hand == padHands[1].Hand)
-            {
-                var indexToSwitch = IsBlueCymbal(padHands[0].Pad) ? 1 : 0;
-                var toSwitch = padHands[indexToSwitch];
-                padHands[indexToSwitch] = (toSwitch.Pad, SwitchHand(toSwitch.Hand));
-            }
+            ResolveSimultaneousHandHits(padHands);
 
-            // Special case: consecutive solo snare notes at non-fast tempo use right hand
+            // Alternate consecutive snare hits, even when they are spaced too far apart
+            // TODO: should probably do something about fast snare rolls to make them double-stroke
             var isSoloSnare = padHands.Count == 1 && padHands[0].Pad == FourLaneDrumPad.RedDrum;
             var previousWasSnare = PreviousWasSnareHit(parentNote.PreviousNote);
-            var isNotFastRepeat = parentNote.PreviousNote is null
-                || parentNote.Time - parentNote.PreviousNote.Time > REPEAT_THRESHOLD;
-            if (isSoloSnare && previousWasSnare && isNotFastRepeat)
+            if (isSoloSnare && previousWasSnare)
             {
-                padHands[0] = (FourLaneDrumPad.RedDrum, Hand.RIGHT);
+                var lastHand = _handStateByPad[FourLaneDrumPad.RedDrum].LastUsedHand;
+                if (lastHand.HasValue)
+                {
+                    padHands[0] = (padHands[0].Note, padHands[0].Pad, SwitchHand(lastHand.Value));
+                }
             }
 
-            //Map each pad and hand to an animation
-            foreach (var (pad, hand) in padHands)
+            // Recorded for future hand decision consistency
+            foreach (var (note, pad, hand) in padHands)
             {
-                animations.Add(GetAnimationType(pad, hand));
+                _handStateByPad[pad].RecordHit(hand, note.Time);
+                _lastHitTimeByHand[(int)hand] = note.Time;
+                animations.Add(GetAnimationType(pad, hand, note.Type));
             }
 
             return animations;
@@ -119,17 +131,78 @@ namespace YARG.Venue.Characters
             // Blue cymbal should stay right hand to prevent excessive twisting
             if (IsBlueCymbal(pad))
             {
-                state.RecordHit(state.DefaultHand, noteTime);
                 return state.DefaultHand;
             }
 
-            var previousHitTime = state.LastHitTime.GetValueOrDefault(double.MaxValue);
-            var isRepeatedNote = noteTime - previousHitTime <= REPEAT_THRESHOLD;
-            var previousHand = state.LastUsedHand.GetValueOrDefault();
-            var shouldAlternateHand = state.LastUsedHand.HasValue && isRepeatedNote;
-            var hand = shouldAlternateHand ? SwitchHand(previousHand) : state.DefaultHand;
-            state.RecordHit(hand, noteTime);
+            var isRepeatedNote = state.LastHitTime.HasValue
+                && noteTime - state.LastHitTime.Value <= REPEAT_THRESHOLD;
+            var hand = isRepeatedNote && state.LastUsedHand.HasValue
+                ? SwitchHand(state.LastUsedHand.Value)
+                : state.DefaultHand;
+
+            // During quick fills, alternate across different pads too,
+            // but do not switch onto a hand that is already busy
+            if (_lastHitTimeByHand[(int)hand] is { } lastHitTime
+                && noteTime >= lastHitTime
+                && noteTime - lastHitTime <= REPEAT_THRESHOLD)
+            {
+                var alternateHand = SwitchHand(hand);
+                var alternateHitTime = _lastHitTimeByHand[(int)alternateHand];
+                if (!alternateHitTime.HasValue || noteTime < alternateHitTime.Value
+                    || noteTime - alternateHitTime.Value > REPEAT_THRESHOLD)
+                {
+                    hand = alternateHand;
+                }
+            }
+
             return hand;
+        }
+
+        private static void ResolveSimultaneousHandHits(List<(DrumNote Note, FourLaneDrumPad Pad, Hand Hand)> padHands)
+        {
+            for (int i = 1; i < padHands.Count; i++)
+            {
+                int duplicateIndex = -1;
+                for (int j = 0; j < i; j++)
+                {
+                    if (padHands[j].Hand == padHands[i].Hand)
+                    {
+                        duplicateIndex = j;
+                        break;
+                    }
+                }
+
+                if (duplicateIndex < 0)
+                {
+                    continue;
+                }
+
+                // Keep the blue cymbal on the right where possible. Otherwise
+                // preserve the later hit and switch the earlier default-hand hit.
+                int indexToSwitch = IsBlueCymbal(padHands[duplicateIndex].Pad) ? i : duplicateIndex;
+                var hitToSwitch = padHands[indexToSwitch];
+                var otherHand = SwitchHand(hitToSwitch.Hand);
+                bool otherHandAlreadyUsed = false;
+                for (int j = 0; j < i; j++)
+                {
+                    if (j != indexToSwitch && padHands[j].Hand == otherHand)
+                    {
+                        otherHandAlreadyUsed = true;
+                        break;
+                    }
+                }
+
+                if (!otherHandAlreadyUsed)
+                {
+                    padHands[indexToSwitch] = (hitToSwitch.Note, hitToSwitch.Pad, otherHand);
+                }
+                else
+                {
+                    // Both hands are already hitting something, this extra pad cannot be struck
+                    padHands.RemoveAt(i);
+                    i--;
+                }
+            }
         }
 
         private static bool PreviousWasSnareHit(DrumNote previousNote)
@@ -161,26 +234,31 @@ namespace YARG.Venue.Characters
             return hand == Hand.LEFT ? Hand.RIGHT : Hand.LEFT;
         }
 
-        private AnimationEvent.AnimationType GetRandomCrashAnimation(Hand hand)
+        private AnimationEvent.AnimationType GetRandomCrashAnimation(Hand hand, bool isSoft)
         {
             bool useCrash2 = _random.Next(2) == 0;
-            return (useCrash2, hand) switch
+            return (useCrash2, hand, isSoft) switch
             {
-                (false, Hand.LEFT)  => AnimationEvent.AnimationType.Crash1LhHard,
-                (false, Hand.RIGHT) => AnimationEvent.AnimationType.Crash1RhHard,
-                (true,  Hand.LEFT)  => AnimationEvent.AnimationType.Crash2LhHard,
-                (true,  Hand.RIGHT) => AnimationEvent.AnimationType.Crash2RhHard,
+                (false, Hand.LEFT, false)  => AnimationEvent.AnimationType.Crash1LhHard,
+                (false, Hand.RIGHT, false) => AnimationEvent.AnimationType.Crash1RhHard,
+                (true,  Hand.LEFT, false)  => AnimationEvent.AnimationType.Crash2LhHard,
+                (true,  Hand.RIGHT, false) => AnimationEvent.AnimationType.Crash2RhHard,
+                (false, Hand.LEFT, true)   => AnimationEvent.AnimationType.Crash1LhSoft,
+                (false, Hand.RIGHT, true)  => AnimationEvent.AnimationType.Crash1RhSoft,
+                (true,  Hand.LEFT, true)   => AnimationEvent.AnimationType.Crash2LhSoft,
+                (true,  Hand.RIGHT, true)  => AnimationEvent.AnimationType.Crash2RhSoft,
                 _ => AnimationEvent.AnimationType.Crash1LhHard,
             };
         }
 
-        private AnimationEvent.AnimationType GetAnimationType(FourLaneDrumPad pad, Hand hand)
+        private AnimationEvent.AnimationType GetAnimationType(FourLaneDrumPad pad, Hand hand, DrumNoteType noteType)
         {
+            bool isSoft = noteType == DrumNoteType.Ghost;
             return pad switch
             {
                 FourLaneDrumPad.RedDrum => hand == Hand.LEFT
-                    ? AnimationEvent.AnimationType.SnareLhHard
-                    : AnimationEvent.AnimationType.SnareRhHard,
+                    ? (isSoft ? AnimationEvent.AnimationType.SnareLhSoft : AnimationEvent.AnimationType.SnareLhHard)
+                    : (isSoft ? AnimationEvent.AnimationType.SnareRhSoft : AnimationEvent.AnimationType.SnareRhHard),
 
                 FourLaneDrumPad.YellowCymbal => hand == Hand.LEFT
                     ? AnimationEvent.AnimationType.HihatLeftHand
@@ -190,7 +268,7 @@ namespace YARG.Venue.Characters
                     ? AnimationEvent.AnimationType.RideLh
                     : AnimationEvent.AnimationType.RideRh,
 
-                FourLaneDrumPad.GreenCymbal => GetRandomCrashAnimation(hand),
+                FourLaneDrumPad.GreenCymbal => GetRandomCrashAnimation(hand, isSoft),
 
                 FourLaneDrumPad.YellowDrum => hand == Hand.LEFT
                     ? AnimationEvent.AnimationType.Tom1LeftHand

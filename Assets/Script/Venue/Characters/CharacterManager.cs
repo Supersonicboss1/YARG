@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -92,6 +92,43 @@ namespace YARG.Venue.Characters
 
         private bool _songHasDrumAnimations;
 
+        private enum DrumAnimationActionType
+        {
+            Trigger,
+            PrepareTarget,
+            BeginStroke,
+        }
+
+        private readonly struct DrumAnimationAction
+        {
+            public readonly AnimationEvent Event;
+            public readonly float Speed;
+            public readonly double Time;
+            public readonly float TransitionDuration;
+            public readonly DrumAnimationActionType Type;
+            public readonly int Order;
+            public readonly AnimationEvent PreviousHandEvent;
+
+            public DrumAnimationAction(AnimationEvent animationEvent, float speed, double time,
+                float transitionDuration, DrumAnimationActionType type, int order,
+                AnimationEvent previousHandEvent = null)
+            {
+                Event = animationEvent;
+                Speed = speed;
+                Time = time;
+                TransitionDuration = transitionDuration;
+                Type = type;
+                Order = order;
+                PreviousHandEvent = previousHandEvent;
+            }
+        }
+
+        private readonly List<float> _drumAnimationSpeeds = new();
+        private readonly List<DrumAnimationAction> _drumAnimationActions = new();
+        private readonly List<DrumAnimationAction> _pendingDrumAnimationPrepares = new();
+        private bool _drumAnimationActionsBuilt;
+        private double _drumAnimationSeekTime;
+
         private double _chartEndTime;
         private bool   _endTriggered;
 
@@ -152,13 +189,24 @@ namespace YARG.Venue.Characters
 
             _guitarAnimationEvents = guitarTrack.Animations.AnimationEvents;
             _bassAnimationEvents = bassTrack.Animations.AnimationEvents;
-            _drumAnimationEvents = drumsTrack.Animations.AnimationEvents;
+            // TODO: Can we reorder the chart's animation list? we are making a copy to not do that right now
+            _drumAnimationEvents = new List<AnimationEvent>(drumsTrack.Animations.AnimationEvents);
 
             // We can generate passable drum animations, so do that if necessary
             if (_drumAnimationEvents.Count < 1)
             {
                 GenerateDrumsAnimations();
             }
+
+            _drumAnimationEvents = _drumAnimationEvents
+                .OrderBy(animationEvent => animationEvent.Time)
+                .ToList();
+            _drumAnimationSpeeds.Clear();
+            _drumAnimationActions.Clear();
+            _pendingDrumAnimationPrepares.Clear();
+            _drumAnimationActionsBuilt = false;
+            _drumAnimationIndex = 0;
+            _drumAnimationSeekTime = 0;
 
             LipsyncEventsByPart.AddRange(chart.LipsyncEventsByPart);
 
@@ -210,6 +258,12 @@ namespace YARG.Venue.Characters
 
         public void Initialize(bool usingCustomChar = false)
         {
+            _drumAnimationActionsBuilt = false;
+            _drumAnimationActions.Clear();
+            _pendingDrumAnimationPrepares.Clear();
+            _drumAnimationIndex = 0;
+            _drumAnimationSeekTime = 0;
+
             // Find all the characters in the venue, done here because OnChartLoaded can get called before any
             // replacement characters are loaded.
             _characters.Clear();
@@ -429,6 +483,8 @@ namespace YARG.Venue.Characters
             _guitarAnimationIndex = 0;
             _bassAnimationIndex = 0;
             _drumAnimationIndex = 0;
+            _drumAnimationSeekTime = time;
+            _pendingDrumAnimationPrepares.Clear();
 
             _guitarTriggerIndex = 0;
             _bassTriggerIndex = 0;
@@ -479,12 +535,6 @@ namespace YARG.Venue.Characters
                 _bassAnimationEvents[_bassAnimationIndex].Time < time)
             {
                 _bassAnimationIndex++;
-            }
-
-            while (_drumAnimationIndex < _drumAnimationEvents.Count &&
-                _drumAnimationEvents[_drumAnimationIndex].Time < time)
-            {
-                _drumAnimationIndex++;
             }
 
             while (_guitarTriggerIndex < _guitarMaps.Count && _guitarMaps[_guitarTriggerIndex].Time < time)
@@ -668,7 +718,7 @@ namespace YARG.Venue.Characters
                 if (_hatTimer <= 0)
                 {
                     _hatTimer = 0;
-                    character.OnDrumAnimation(AnimationEvent.AnimationType.CloseHiHat);
+                    character.OnDrumAnimation(AnimationEvent.AnimationType.CloseHiHat, 1f);
                 }
             }
 
@@ -705,27 +755,109 @@ namespace YARG.Venue.Characters
             }
 
             // Process animation events separately so they don't get skipped when StartAnimation exits early
-            var hasAnimationEvents = _drumAnimationIndex < _drumAnimationEvents.Count;
-            while (hasAnimationEvents)
+            EnsureDrumAnimationActions(character);
+            for (int i = _pendingDrumAnimationPrepares.Count - 1; i >= 0; i--)
             {
-                var animEvent = _drumAnimationEvents[_drumAnimationIndex];
-                var animationIsReady = animEvent.Time - character.TimeToFirstHit <= GameManager.SongTime;
-                if (!animationIsReady)
+                var pending = _pendingDrumAnimationPrepares[i];
+                if (pending.Event.Time < _drumAnimationSeekTime)
+                {
+                    _pendingDrumAnimationPrepares.RemoveAt(i);
+                    continue;
+                }
+
+                double strokeStartTime = pending.Event.Time - (character.TimeToFirstHit / pending.Speed);
+                if (strokeStartTime <= GameManager.SongTime)
+                {
+                    TriggerDrumStroke(character, pending.Event, pending.Speed, character.TimeToFirstHit / pending.Speed);
+                    _pendingDrumAnimationPrepares.RemoveAt(i);
+                    continue;
+                }
+
+                if (pending.PreviousHandEvent != null
+                    && character.HasDrumAnimationReachedHit(pending.PreviousHandEvent.Type))
+                {
+                    float remainingBlendTime = (float)(strokeStartTime - GameManager.SongTime);
+                    if (remainingBlendTime > 1f / character.AnimationFrameRate)
+                    {
+                        character.OnDrumAnimation(pending.Event.Type, 0f, remainingBlendTime, false, true);
+                    }
+                    else
+                    {
+                        TriggerDrumStroke(character, pending.Event, pending.Speed, character.TimeToFirstHit / pending.Speed);
+                    }
+
+                    _pendingDrumAnimationPrepares.RemoveAt(i);
+                }
+            }
+
+            while (_drumAnimationIndex < _drumAnimationActions.Count)
+            {
+                var action = _drumAnimationActions[_drumAnimationIndex];
+                if (action.Event.Time < _drumAnimationSeekTime)
+                {
+                    _drumAnimationIndex++;
+                    continue;
+                }
+
+                if (action.Time > GameManager.SongTime)
                 {
                     break;
                 }
 
                 _drumAnimationIndex++;
-
-                character.OnDrumAnimation(animEvent.Type);
-
-                if (animEvent.Type == AnimationEvent.AnimationType.OpenHiHat)
+                switch (action.Type)
                 {
-                    _hatTimer = animEvent.TimeLength;
+                    case DrumAnimationActionType.Trigger:
+                        TriggerDrumStroke(character, action.Event, action.Speed, action.TransitionDuration);
+                        if (action.Event.Type == AnimationEvent.AnimationType.OpenHiHat)
+                        {
+                            _hatTimer = action.Event.TimeLength;
+                        }
+                        break;
+                    case DrumAnimationActionType.PrepareTarget:
+                        double strokeStartTime = action.Event.Time - (character.TimeToFirstHit / action.Speed);
+                        if (strokeStartTime <= GameManager.SongTime)
+                        {
+                            TriggerDrumStroke(character, action.Event, action.Speed, character.TimeToFirstHit / action.Speed);
+                        }
+                        else if (action.PreviousHandEvent == null
+                            || character.HasDrumAnimationReachedHit(action.PreviousHandEvent.Type))
+                        {
+                            float remainingBlendTime = (float)(strokeStartTime - GameManager.SongTime);
+                            if (remainingBlendTime > 1f / character.AnimationFrameRate)
+                            {
+                                character.OnDrumAnimation(action.Event.Type, 0f, remainingBlendTime, false, true);
+                            }
+                            else
+                            {
+                                TriggerDrumStroke(character, action.Event, action.Speed, character.TimeToFirstHit / action.Speed);
+                            }
+                        }
+                        else
+                        {
+                            _pendingDrumAnimationPrepares.Add(action);
+                        }
+                        break;
+                    case DrumAnimationActionType.BeginStroke:
+                        character.SetDrumAnimationSpeed(action.Event.Type, action.Speed);
+                        break;
                 }
-
-                hasAnimationEvents = _drumAnimationIndex < _drumAnimationEvents.Count;
             }
+        }
+
+        private static void TriggerDrumStroke(VenueCharacter character, AnimationEvent animationEvent,
+            float speed, float transitionDuration)
+        {
+            bool isHandStroke = VenueCharacter.IsDrumHandAnimation(animationEvent.Type);
+            bool hasHandSpeedParameter = isHandStroke
+                && character.HasDrumAnimationSpeedParameter(animationEvent.Type);
+            character.OnDrumAnimation(
+                animationEvent.Type,
+                speed,
+                transitionDuration,
+                !hasHandSpeedParameter,
+                hasHandSpeedParameter
+            );
         }
 
         /// <summary>
@@ -767,6 +899,150 @@ namespace YARG.Venue.Characters
             _drumAnimationEvents.Clear();
             var animationEvents = _drumCharacterHelper.GetDrumAnimations(_drumNotes);
             _drumAnimationEvents.AddRange(animationEvents);
+        }
+
+        private void BuildDrumAnimationSpeeds(float frameRate)
+        {
+            _drumAnimationSpeeds.Clear();
+
+            // How long the full hit + rebound takes. TODO: probably a bad idea to hardcode this, venue authors may want to change this later.
+            const float StrokeFrames = 11f;
+            double naturalStrokeTime = StrokeFrames / Mathf.Max(1f, frameRate);
+            // const float MaxSpeed = 3.5f;
+            const float MaxSpeed = 1f;
+            double? previousLeftHitTime = null;
+            double? previousRightHitTime = null;
+
+            for (int i = 0; i < _drumAnimationEvents.Count; i++)
+            {
+                var current = _drumAnimationEvents[i];
+                if (!VenueCharacter.IsDrumHandAnimation(current.Type))
+                {
+                    _drumAnimationSpeeds.Add(1f);
+                    continue;
+                }
+
+                bool currentLeft = VenueCharacter.IsDrumLeftHandAnimation(current.Type);
+                var previousHitTime = currentLeft ? previousLeftHitTime : previousRightHitTime;
+                float speed = 1f;
+                if (previousHitTime.HasValue)
+                {
+                    double interval = current.Time - previousHitTime.Value;
+                    speed = interval <= 0
+                        ? MaxSpeed
+                        : Mathf.Clamp((float)(naturalStrokeTime / interval), 1f, MaxSpeed);
+                }
+
+                _drumAnimationSpeeds.Add(speed);
+                if (currentLeft)
+                {
+                    previousLeftHitTime = current.Time;
+                }
+                else
+                {
+                    previousRightHitTime = current.Time;
+                }
+            }
+        }
+
+        private void EnsureDrumAnimationActions(VenueCharacter character)
+        {
+            if (_drumAnimationActionsBuilt)
+            {
+                return;
+            }
+
+            _drumAnimationActions.Clear();
+
+            BuildDrumAnimationSpeeds(character.AnimationFrameRate);
+            double frameDuration = 1.0 / character.AnimationFrameRate;
+            int previousLeftHitIndex = -1;
+            int previousRightHitIndex = -1;
+            int order = 0;
+
+            for (int i = 0; i < _drumAnimationEvents.Count; i++)
+            {
+                var animationEvent = _drumAnimationEvents[i];
+                float speed = i < _drumAnimationSpeeds.Count ? _drumAnimationSpeeds[i] : 1f;
+                bool isHandStroke = VenueCharacter.IsDrumHandAnimation(animationEvent.Type);
+                double hitLeadTime = character.TimeToFirstHit;
+                double activationTime = animationEvent.Time - (hitLeadTime / speed);
+                float strikeTransitionDuration = isHandStroke
+                    ? (float)(hitLeadTime / speed)
+                    : 0.05f;
+
+                int previousHitIndex = -1;
+                if (isHandStroke)
+                {
+                    bool isLeftHand = VenueCharacter.IsDrumLeftHandAnimation(animationEvent.Type);
+                    previousHitIndex = isLeftHand ? previousLeftHitIndex : previousRightHitIndex;
+                }
+
+                bool shouldRearm = previousHitIndex >= 0
+                    && character.HasDrumAnimationSpeedParameter(animationEvent.Type);
+                // TODO: We should mayhaps not increase the speed for consecutive hits on the same pad to allow the hits to interrupt each other for fast hits
+                //  looking at you, Homecoming snare roll charted entirely as hard snare hits. wtf HMX?
+                if (shouldRearm)
+                {
+                    const double RecoveryFrames = 8;
+                    double recoveryWindow = RecoveryFrames / (character.AnimationFrameRate * speed);
+                    double previousHitTime = _drumAnimationEvents[previousHitIndex].Time;
+                    double prepareTime = Math.Max(
+                        previousHitTime + frameDuration,
+                        activationTime - recoveryWindow
+                    );
+                    float blendDuration = (float)(activationTime - prepareTime);
+
+                    _drumAnimationActions.Add(new DrumAnimationAction(
+                        animationEvent,
+                        speed,
+                        prepareTime,
+                        blendDuration,
+                        DrumAnimationActionType.PrepareTarget,
+                        order++,
+                        _drumAnimationEvents[previousHitIndex]
+                    ));
+                    _drumAnimationActions.Add(new DrumAnimationAction(
+                        animationEvent,
+                        speed,
+                        activationTime,
+                        0f,
+                        DrumAnimationActionType.BeginStroke,
+                        order++
+                    ));
+                }
+                else
+                {
+                    _drumAnimationActions.Add(new DrumAnimationAction(
+                        animationEvent,
+                        speed,
+                        activationTime,
+                        strikeTransitionDuration,
+                        DrumAnimationActionType.Trigger,
+                        order++
+                    ));
+                }
+
+                if (isHandStroke)
+                {
+                    if (VenueCharacter.IsDrumLeftHandAnimation(animationEvent.Type))
+                    {
+                        previousLeftHitIndex = i;
+                    }
+                    else
+                    {
+                        previousRightHitIndex = i;
+                    }
+                }
+            }
+
+            var orderedActions = _drumAnimationActions
+                .OrderBy(action => action.Time)
+                .ThenBy(action => action.Order)
+                .ToList();
+            _drumAnimationActions.Clear();
+            _drumAnimationActions.AddRange(orderedActions);
+            _drumAnimationActionsBuilt = true;
         }
 
         private static List<AnimationTrigger> GenerateMap<T>(List<T> notes) where T : Note<T>

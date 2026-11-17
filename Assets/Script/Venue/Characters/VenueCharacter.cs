@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using DG.Tweening;
 using UnityEngine;
 using UnityEngine.Serialization;
 using UniVRM10;
@@ -108,8 +107,12 @@ namespace YARG.Venue.Characters
 
         private float _animationLength;
         private float _animationSpeed;
+        private float _animationFrameRate = 30f;
         private int   _speedAdjustmentHash;
         private int   _unclampedSpeedAdjustmentHash;
+
+        private int   _drumsLeftHandSpeedAdjustmentHash;
+        private int   _drumsRightHandSpeedAdjustmentHash;
 
         private bool _isAnimating;
 
@@ -151,6 +154,7 @@ namespace YARG.Venue.Characters
 
         public HandMapType CurrentHandMap => _handMap;
         public StrumMapType CurrentStrumMap => _strumMap;
+        public float AnimationFrameRate => _animationFrameRate;
 
         [NonSerialized]
         public AnimationStateType CurrentHandPosition;
@@ -207,7 +211,8 @@ namespace YARG.Venue.Characters
             {
                 var clip = _animatorController.animationClips[0];
                 _animationLength = clip.length;
-                TimeToFirstHit = _framesToFirstHit / clip.frameRate;
+                _animationFrameRate = clip.frameRate > 0f ? clip.frameRate : 30f;
+                TimeToFirstHit = (_framesToFirstHit + 1) / _animationFrameRate;
             }
             else
             {
@@ -217,6 +222,9 @@ namespace YARG.Venue.Characters
 
             _speedAdjustmentHash = Animator.StringToHash("SpeedAdjustment");
             _unclampedSpeedAdjustmentHash = Animator.StringToHash("UnclampedSpeedAdjustment");
+            // TODO: Change the names of these parameters, and maybe generalise this for all instruments.
+            _drumsLeftHandSpeedAdjustmentHash = Animator.StringToHash("LHSpeed");
+            _drumsRightHandSpeedAdjustmentHash = Animator.StringToHash("RHSpeed");
 
             if (_enableAnimationStates) {
                 _idleAnimationHash = Animator.StringToHash(_idleAnimationName);
@@ -475,8 +483,13 @@ namespace YARG.Venue.Characters
 
             YargLogger.LogTrace($"Animation {animation} not found for character type {Type}");
         }
-
-        public void OnDrumAnimation(AnimationType animation)
+        /*
+         * TODO: Everything about this drum animation code sucks. maybe drums should be a subclass but that is a pain because of VRMCharacter.
+         *  Need to think about a clean way to handle instrument-specific animation logic without making the base class a mess.
+         *  At the very least a lot of this needs to be generalised to work for all instruments, not just drums.
+         */
+        public void OnDrumAnimation(AnimationType animation, float speed, float transitionDuration = 0.05f,
+            bool setAnimatorTrigger = true, bool restartAtStart = false)
         {
             AnimationStateType? animState = animation switch
             {
@@ -485,6 +498,7 @@ namespace YARG.Venue.Characters
                 AnimationType.CloseHiHat => AnimationStateType.CloseHiHat,
                 AnimationType.HihatLeftHand => AnimationStateType.HihatLeftHand,
                 AnimationType.HihatRightHand => AnimationStateType.HihatRightHand,
+                AnimationType.PercussionRightHand => AnimationStateType.PercussionRightHand,
                 AnimationType.SnareLhHard => AnimationStateType.SnareLhHard,
                 AnimationType.SnareRhHard => AnimationStateType.SnareRhHard,
                 AnimationType.SnareLhSoft => AnimationStateType.SnareLhSoft,
@@ -497,6 +511,8 @@ namespace YARG.Venue.Characters
                 AnimationType.Crash2LhSoft => AnimationStateType.Crash2LhSoft,
                 AnimationType.Crash2RhHard => AnimationStateType.Crash2RhHard,
                 AnimationType.Crash2RhSoft => AnimationStateType.Crash2RhSoft,
+                AnimationType.Crash1Choke => AnimationStateType.Crash1Choke,
+                AnimationType.Crash2Choke => AnimationStateType.Crash2Choke,
                 AnimationType.RideLh => AnimationStateType.RideLh,
                 AnimationType.RideRh => AnimationStateType.RideRh,
                 AnimationType.Tom1LeftHand => AnimationStateType.Tom1LeftHand,
@@ -508,6 +524,21 @@ namespace YARG.Venue.Characters
                 _ => null
             };
 
+            // If the animation is a soft variant, but the venue doesn't have that state, fall back to the hard variant
+            if (animState.HasValue && !_animationEvents.HasState(animState.Value))
+            {
+                animState = animation switch
+                {
+                    AnimationType.SnareLhSoft => AnimationStateType.SnareLhHard,
+                    AnimationType.SnareRhSoft => AnimationStateType.SnareRhHard,
+                    AnimationType.Crash1LhSoft => AnimationStateType.Crash1LhHard,
+                    AnimationType.Crash1RhSoft => AnimationStateType.Crash1RhHard,
+                    AnimationType.Crash2LhSoft => AnimationStateType.Crash2LhHard,
+                    AnimationType.Crash2RhSoft => AnimationStateType.Crash2RhHard,
+                    _ => animState,
+                };
+            }
+
             if (animation is AnimationType.OpenHiHat or AnimationType.CloseHiHat)
             {
                 HatIsOpen = animation == AnimationType.OpenHiHat;
@@ -515,9 +546,97 @@ namespace YARG.Venue.Characters
 
             if (animState.HasValue)
             {
-                SetTrigger(animState.Value);
+                var state = animState.Value;
+                if (IsDrumHandAnimation(state))
+                {
+                    bool isLeftHand = IsDrumLeftHandAnimation(state);
+                    var hash = isLeftHand ? _drumsLeftHandSpeedAdjustmentHash : _drumsRightHandSpeedAdjustmentHash;
+                    SetFloat(hash, speed);
+                }
+                SetTrigger(state, transitionDuration, setAnimatorTrigger, restartAtStart);
+            }
+        }
+
+        public void SetDrumAnimationSpeed(AnimationType animation, float speed)
+        {
+            if (!IsDrumHandAnimation(animation))
+            {
+                return;
             }
 
+            var hash = IsDrumLeftHandAnimation(animation)
+                ? _drumsLeftHandSpeedAdjustmentHash
+                : _drumsRightHandSpeedAdjustmentHash;
+            SetFloat(hash, speed);
+        }
+
+        public bool HasDrumAnimationSpeedParameter(AnimationType animation)
+        {
+            if (!IsDrumHandAnimation(animation))
+            {
+                return false;
+            }
+
+            var hash = IsDrumLeftHandAnimation(animation)
+                ? _drumsLeftHandSpeedAdjustmentHash
+                : _drumsRightHandSpeedAdjustmentHash;
+            return _floatHashes.Contains(hash);
+        }
+
+        public bool HasDrumAnimationReachedHit(AnimationType animation)
+        {
+            if (_animator == null)
+            {
+                return true;
+            }
+
+            if (!_animationEvents.TryGet(animation, out var animationInfos))
+            {
+                animation = animation switch
+                {
+                    AnimationType.SnareLhSoft => AnimationType.SnareLhHard,
+                    AnimationType.SnareRhSoft => AnimationType.SnareRhHard,
+                    AnimationType.Crash1LhSoft => AnimationType.Crash1LhHard,
+                    AnimationType.Crash1RhSoft => AnimationType.Crash1RhHard,
+                    AnimationType.Crash2LhSoft => AnimationType.Crash2LhHard,
+                    AnimationType.Crash2RhSoft => AnimationType.Crash2RhHard,
+                    _ => animation,
+                };
+
+                if (!_animationEvents.TryGet(animation, out animationInfos))
+                {
+                    return true;
+                }
+            }
+
+            bool foundActiveState = false;
+            foreach (var info in animationInfos)
+            {
+                var currentState = _animator.GetCurrentAnimatorStateInfo(info.Layer);
+                if (currentState.shortNameHash == info.Hash)
+                {
+                    foundActiveState = true;
+                    if (currentState.normalizedTime * currentState.length >= TimeToFirstHit)
+                    {
+                        return true;
+                    }
+                }
+
+                if (_animator.IsInTransition(info.Layer))
+                {
+                    var nextState = _animator.GetNextAnimatorStateInfo(info.Layer);
+                    if (nextState.shortNameHash == info.Hash)
+                    {
+                        foundActiveState = true;
+                        if (nextState.normalizedTime * nextState.length >= TimeToFirstHit)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return !foundActiveState;
         }
 
         public virtual void OnChartEvent(ChartEvent e)
