@@ -71,7 +71,7 @@ namespace YARG.Gameplay.Player
 
         protected void UpdateStartHold()
         {
-            if (IsStartBlocked)
+            if (IsTrackMenuBlocked)
             {
                 _startHold.Cancel();
                 return;
@@ -87,7 +87,7 @@ namespace YARG.Gameplay.Player
                 return;
             }
 
-            if (IsStartBlocked)
+            if (IsTrackMenuBlocked)
             {
                 _startHold.Cancel();
                 return;
@@ -134,7 +134,9 @@ namespace YARG.Gameplay.Player
 
         private bool CanOpenPlayerMenu => GetPlayerMenuItems().HasUsable();
 
-        private bool IsStartBlocked => !IsActive || IsPlayerMenuOpen || !GameManager.CanPause;
+        private bool IsPauseMenuBlocked => !IsActive || IsPlayerMenuOpen || !GameManager.CanPause;
+
+        private bool IsTrackMenuBlocked => !IsActive || IsPlayerMenuOpen || !GameManager.CanOpenTrackMenu;
 
         public void DropOut()
         {

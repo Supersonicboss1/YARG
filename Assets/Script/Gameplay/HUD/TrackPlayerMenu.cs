@@ -132,8 +132,8 @@ namespace YARG.Gameplay.HUD
             gameObject.SetActive(true);
             SlideTo(targetY: _openY, duration: OPEN_SECONDS, ease: Ease.OutCubic);
             openCount++;
-
-            if (SettingsManager.Settings.PauseOnMenuOpen.Value)
+            // TODO: even if online, we should probably pause if every player has their menu open
+            if (SettingsManager.Settings.PauseOnMenuOpen.Value && !GameManager.IsOnline)
             {
                 _gameManager.Pause(showMenu: false);
             }

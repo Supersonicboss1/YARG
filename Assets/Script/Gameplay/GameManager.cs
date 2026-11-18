@@ -70,7 +70,7 @@ namespace YARG.Gameplay
 
         [SerializeField]
         private UnisonDisplay _unisonDisplay;
-        
+
         public UnisonDisplay UnisonDisplay => _unisonDisplay;
 
         [SerializeField]
@@ -140,6 +140,10 @@ namespace YARG.Gameplay
         public bool Paused => _songRunner?.Paused ?? true;
 
         public bool CanPause => !IsOnline && !Paused && !PlayerHasFailed && !IsHudEditing &&
+            !DialogManager.Instance.IsDialogShowing &&
+            (!IsPractice || PracticeManager.HasSelectedSection);
+
+        public bool CanOpenTrackMenu => !Paused && !PlayerHasFailed && !IsHudEditing &&
             !DialogManager.Instance.IsDialogShowing &&
             (!IsPractice || PracticeManager.HasSelectedSection);
 
