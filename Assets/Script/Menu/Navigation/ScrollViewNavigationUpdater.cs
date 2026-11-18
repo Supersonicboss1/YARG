@@ -18,6 +18,7 @@ namespace YARG.Menu.Navigation
         {
             _navigationGroup = GetComponent<NavigationGroup>();
             _scrollRect = GetComponent<ScrollRect>();
+            _contentTransform ??= _scrollRect.content;
             _viewportTransform = _scrollRect.viewport != null
                 ? _scrollRect.viewport
                 : GetComponent<RectTransform>();
@@ -32,6 +33,13 @@ namespace YARG.Menu.Navigation
                 return;
 
             Canvas.ForceUpdateCanvases();
+
+            // Reveal a non-selectable heading above the first row when navigation wraps.
+            if (_navigationGroup.SelectedIndex == 0)
+            {
+                _scrollRect.verticalNormalizedPosition = 1f;
+                return;
+            }
 
             if (_scrollRect.ScrollableHeight() <= 0f)
             {
